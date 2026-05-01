@@ -1,0 +1,27 @@
+# Maven
+target/
+*.jar
+*.war
+*.ear
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.classpath
+*.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime data (gerado pelo servidor ao correr)
+servidor/data/livros.json
+servidor/data/log.txt
+
+# Claude Code (configurações locais)
+.claude/
+
+# Maven shade plugin artifact
+dependency-reduced-pom.xml

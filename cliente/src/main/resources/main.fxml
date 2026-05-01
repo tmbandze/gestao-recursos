@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="cliente.ControladorPrincipal">
+
+    <!-- TOPO: barra de pesquisa e filtro -->
+    <top>
+        <VBox style="-fx-padding: 10; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <TextField fx:id="campoPesquisa"
+                           promptText="Pesquisar por título, autor ou categoria..."
+                           prefWidth="380"
+                           onAction="#pesquisar"/>
+                <Button text="Pesquisar" onAction="#pesquisar"/>
+                <Separator orientation="VERTICAL"/>
+                <Label text="Filtro:"/>
+                <ComboBox fx:id="filtroEstado" onAction="#filtrarEstado" prefWidth="130"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="labelStatus"
+                       text="Não ligado"
+                       style="-fx-text-fill: #888; -fx-font-weight: bold;"/>
+                <Button fx:id="btnReconectar"
+                        text="Reconectar"
+                        onAction="#reconectar"
+                        style="-fx-background-color: #FF5722; -fx-text-fill: white; -fx-font-weight: bold;"/>
+            </HBox>
+        </VBox>
+    </top>
+
+    <!-- CENTRO: tabela de livros -->
+    <center>
+        <TableView fx:id="tabelaLivros" VBox.vgrow="ALWAYS">
+            <columns>
+                <TableColumn fx:id="colTitulo"    text="Título"    prefWidth="280"/>
+                <TableColumn fx:id="colAutor"     text="Autor"     prefWidth="160"/>
+                <TableColumn fx:id="colCategoria" text="Categoria" prefWidth="140"/>
+                <TableColumn fx:id="colEstado"    text="Estado"    prefWidth="110"/>
+            </columns>
+            <placeholder>
+                <Label text="Sem livros. Insere o primeiro ou verifica a ligação ao servidor."/>
+            </placeholder>
+        </TableView>
+    </center>
+
+    <!-- DIREITA: painel de detalhes -->
+    <right>
+        <VBox spacing="8" style="-fx-padding: 10;" prefWidth="230">
+            <Label text="Detalhes do Livro" style="-fx-font-weight: bold; -fx-font-size: 13;"/>
+            <TextArea fx:id="painelDetalhes"
+                      prefHeight="220"
+                      editable="false"
+                      wrapText="true"
+                      style="-fx-font-family: monospace; -fx-font-size: 12;"/>
+        </VBox>
+    </right>
+
+    <!-- BAIXO: botões de acção e painel de notificações -->
+    <bottom>
+        <VBox style="-fx-padding: 10; -fx-background-color: #f8f8f8; -fx-border-color: #ddd; -fx-border-width: 1 0 0 0;">
+            <HBox spacing="8" style="-fx-padding: 0 0 8 0;">
+                <Button text="Inserir Livro"
+                        onAction="#inserirLivro"
+                        style="-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-font-weight: bold;"
+                        prefWidth="120"/>
+                <Button text="Requisitar"
+                        onAction="#requisitarLivro"
+                        style="-fx-background-color: #2196F3; -fx-text-fill: white; -fx-font-weight: bold;"
+                        prefWidth="100"/>
+                <Button text="Devolver"
+                        onAction="#devolverLivro"
+                        style="-fx-background-color: #FF9800; -fx-text-fill: white; -fx-font-weight: bold;"
+                        prefWidth="100"/>
+                <Separator orientation="VERTICAL"/>
+                <Button text="Relatório"  onAction="#verRelatorio"  prefWidth="90"/>
+                <Button text="Histórico" onAction="#verHistorico" prefWidth="90"/>
+                <Separator orientation="VERTICAL"/>
+                <Button fx:id="btnAdmin"
+                        text="Painel Admin"
+                        onAction="#abrirPainelAdmin"
+                        style="-fx-background-color: #E53935; -fx-text-fill: white; -fx-font-weight: bold;"
+                        prefWidth="110"/>
+            </HBox>
+            <Label text="Notificações:" style="-fx-font-weight: bold;"/>
+            <TextArea fx:id="painelNotificacoes"
+                      prefHeight="110"
+                      editable="false"
+                      wrapText="true"
+                      style="-fx-font-family: monospace; -fx-font-size: 11;"/>
+        </VBox>
+    </bottom>
+
+</BorderPane>

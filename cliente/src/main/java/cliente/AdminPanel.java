@@ -1,5 +1,6 @@
 package cliente;
 
+import javafx.beans.property.SimpleStringProperty;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -11,13 +12,12 @@ import shared.Protocolo;
 public class AdminPanel {
 
     private final Cliente cliente;
-    private final Stage stage;
+    private final Stage   stage;
 
-    // Componentes
-    private final ListView<String> listaUtilizadores = new ListView<>();
-    private final TableView<String[]> tabelaLivros   = new TableView<>();
-    private final TextArea areaLog                   = new TextArea();
-    private final Label labelStats                   = new Label();
+    private final ListView<String>    listaUtilizadores = new ListView<>();
+    private final TableView<String[]> tabelaLivros      = new TableView<>();
+    private final TextArea            areaLog           = new TextArea();
+    private final Label               labelStats        = new Label();
 
     public AdminPanel(Cliente cliente, Stage dono) {
         this.cliente = cliente;
@@ -25,18 +25,26 @@ public class AdminPanel {
         stage.initOwner(dono);
         stage.initModality(Modality.NONE);
         stage.setTitle("Painel de Administração");
-        stage.setScene(new Scene(construirLayout(), 750, 520));
+
+        Scene scene = new Scene(construirLayout(), 820, 560);
+        scene.getStylesheets().add(
+            getClass().getResource("/dark-theme.css").toExternalForm()
+        );
+        stage.setScene(scene);
     }
 
     private VBox construirLayout() {
         // ── Cabeçalho ──
-        labelStats.setStyle("-fx-font-size: 13; -fx-font-weight: bold;");
-        Button btnAtualizar = new Button("Atualizar");
+        labelStats.getStyleClass().add("admin-stats-label");
+
+        Button btnAtualizar = new Button("↻  Atualizar");
+        btnAtualizar.getStyleClass().add("btn-ghost");
         btnAtualizar.setOnAction(e -> atualizar());
-        HBox cabecalho = new HBox(20, labelStats, btnAtualizar);
-        cabecalho.setPadding(new Insets(10));
-        cabecalho.setStyle("-fx-background-color: #37474F; -fx-border-radius: 4;");
-        labelStats.setStyle("-fx-font-size: 13; -fx-font-weight: bold; -fx-text-fill: white;");
+
+        HBox cabecalho = new HBox(16, labelStats, new Region(), btnAtualizar);
+        HBox.setHgrow(cabecalho.getChildren().get(1), Priority.ALWAYS);
+        cabecalho.getStyleClass().add("admin-header");
+        cabecalho.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
         // ── Tab: Utilizadores ──
         Tab tabUsers = new Tab("Utilizadores Online");
@@ -54,51 +62,62 @@ public class AdminPanel {
         Tab tabLog = new Tab("Log de Operações");
         tabLog.setClosable(false);
         areaLog.setEditable(false);
-        areaLog.setStyle("-fx-font-family: monospace; -fx-font-size: 11;");
+        areaLog.setWrapText(false);
         tabLog.setContent(areaLog);
 
         TabPane tabs = new TabPane(tabUsers, tabLivros, tabLog);
+        VBox.setVgrow(tabs, Priority.ALWAYS);
 
         VBox raiz = new VBox(cabecalho, tabs);
-        VBox.setVgrow(tabs, Priority.ALWAYS);
         return raiz;
     }
 
     @SuppressWarnings("unchecked")
     private void configurarTabelaLivros() {
-        TableColumn<String[], String> colTitulo = new TableColumn<>("Título");
-        colTitulo.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()[0]));
-        colTitulo.setPrefWidth(220);
+        tabelaLivros.getStyleClass().add("book-table");
 
-        TableColumn<String[], String> colAutor = new TableColumn<>("Autor");
-        colAutor.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()[1]));
-        colAutor.setPrefWidth(140);
+        TableColumn<String[], String> colTitulo = new TableColumn<>("TÍTULO");
+        colTitulo.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[0]));
+        colTitulo.setPrefWidth(230);
 
-        TableColumn<String[], String> colEstado = new TableColumn<>("Estado");
-        colEstado.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()[2]));
-        colEstado.setPrefWidth(100);
+        TableColumn<String[], String> colAutor = new TableColumn<>("AUTOR");
+        colAutor.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[1]));
+        colAutor.setPrefWidth(150);
 
-        TableColumn<String[], String> colCom = new TableColumn<>("Requisitado por");
-        colCom.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()[3]));
-        colCom.setPrefWidth(130);
+        TableColumn<String[], String> colEstado = new TableColumn<>("ESTADO");
+        colEstado.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[2]));
+        colEstado.setPrefWidth(110);
+        colEstado.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String estado, boolean empty) {
+                super.updateItem(estado, empty);
+                setText(null);
+                if (empty || estado == null) { setGraphic(null); return; }
+                boolean disp = estado.toUpperCase().contains("DISP");
+                Label badge = new Label(disp ? "● Disponível" : "● Emprestado");
+                badge.getStyleClass().add(disp ? "badge-available" : "badge-borrowed");
+                setGraphic(badge);
+            }
+        });
 
-        TableColumn<String[], String> colFila = new TableColumn<>("Fila de Espera");
-        colFila.setCellValueFactory(d -> new javafx.beans.property.SimpleStringProperty(d.getValue()[4]));
-        colFila.setPrefWidth(140);
+        TableColumn<String[], String> colCom = new TableColumn<>("REQUISITADO POR");
+        colCom.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[3]));
+        colCom.setPrefWidth(150);
+
+        TableColumn<String[], String> colFila = new TableColumn<>("FILA DE ESPERA");
+        colFila.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[4]));
+        colFila.setPrefWidth(150);
 
         tabelaLivros.getColumns().addAll(colTitulo, colAutor, colEstado, colCom, colFila);
         tabelaLivros.setPlaceholder(new Label("Sem livros no sistema."));
     }
 
     private void atualizar() {
-        // Remove respostas residuais que possam ter ficado na fila
         cliente.drenaFila();
         carregarUtilizadores();
         carregarLivros();
         carregarLog();
     }
 
-    // Chamado pelo ControladorPrincipal quando recebe ATUALIZAR do servidor
     public void notificarAtualizacao() {
         if (stage.isShowing()) {
             javafx.application.Platform.runLater(this::atualizar);
@@ -115,7 +134,7 @@ public class AdminPanel {
             String[] partes = u.split(",", 2);
             String nome = partes[0];
             String ip   = partes.length > 1 ? partes[1] : "?";
-            listaUtilizadores.getItems().add(nome + "   (" + ip + ")");
+            listaUtilizadores.getItems().add(nome + "     (" + ip + ")");
         }
     }
 
@@ -125,19 +144,13 @@ public class AdminPanel {
         if (resp == null || !resp.startsWith(Protocolo.SISTEMA + "|")) return;
 
         String[] secoes = resp.split("\\|LIVROS\\|", 2);
-
-        // Stats no cabeçalho
         String stats = secoes[0].replace(Protocolo.SISTEMA + "|", "").replace("|", "   ");
-        labelStats.setText("Sistema: " + stats);
+        labelStats.setText("Sistema:  " + stats);
 
         if (secoes.length < 2 || secoes[1].isEmpty()) return;
-
-        // Cada livro separado por "|"
         for (String entrada : secoes[1].split("\\|")) {
             String[] c = entrada.split("~", 5);
-            if (c.length == 5) {
-                tabelaLivros.getItems().add(c);
-            }
+            if (c.length == 5) tabelaLivros.getItems().add(c);
         }
     }
 
@@ -151,7 +164,6 @@ public class AdminPanel {
     public void mostrar() {
         stage.show();
         stage.toFront();
-        // carregar dados DEPOIS da janela estar visível
         javafx.application.Platform.runLater(this::atualizar);
     }
 }

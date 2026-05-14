@@ -12,10 +12,16 @@ public class MainApp extends Application {
     public void start(Stage palco) throws Exception {
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/main.fxml"));
         Parent raiz = loader.load();
-        palco.setTitle("Gestão de Recursos — Partilha de Livros");
-        palco.setScene(new Scene(raiz, 960, 620));
-        palco.setMinWidth(800);
-        palco.setMinHeight(500);
+
+        Scene scene = new Scene(raiz, 1100, 680);
+        scene.getStylesheets().add(
+            getClass().getResource("/dark-theme.css").toExternalForm()
+        );
+
+        palco.setTitle("Biblioteca Digital — Gestão de Recursos");
+        palco.setScene(scene);
+        palco.setMinWidth(860);
+        palco.setMinHeight(540);
         palco.show();
     }
 

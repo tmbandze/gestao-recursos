@@ -1,0 +1,675 @@
+/* ═══════════════════════════════════════════════════════
+   Biblioteca Digital — Dark Theme
+   Gestão de Recursos | Sistemas Distribuídos 2025/2026
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Looked-up colours (JavaFX CSS variables) ───────── */
+.root {
+    bg:           #0B0D14;
+    surface:      #12141E;
+    surface-hi:   #1A1D2A;
+    border-col:   #252840;
+    accent:       #E8A020;
+    blue:         #5BC4F7;
+    text-pri:     #DDE1EF;
+    text-sec:     #6A6F8E;
+    clr-success:  #3DDB7E;
+    clr-warning:  #FB8640;
+    clr-danger:   #F06060;
+
+    -fx-background-color: bg;
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-text-fill: text-pri;
+}
+
+/* ── TOP BAR ─────────────────────────────────────────── */
+.topbar {
+    -fx-background-color: surface;
+    -fx-padding: 10 16 10 16;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+}
+
+.app-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: accent;
+}
+
+.search-field {
+    -fx-background-color: surface-hi;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: text-pri;
+    -fx-prompt-text-fill: text-sec;
+    -fx-padding: 7 12 7 12;
+    -fx-highlight-fill: derive(blue, -40%);
+}
+.search-field:focused {
+    -fx-border-color: blue;
+    -fx-effect: dropshadow(gaussian, derive(blue, -20%), 8, 0.3, 0, 0);
+}
+
+.filter-combo {
+    -fx-background-color: surface-hi;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-text-fill: text-pri;
+}
+.filter-combo .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: text-pri;
+    -fx-padding: 4 10;
+}
+.filter-combo .cell {
+    -fx-text-fill: text-pri;
+    -fx-background-color: transparent;
+}
+.filter-combo .arrow-button {
+    -fx-background-color: transparent;
+}
+.filter-combo .arrow-button .arrow {
+    -fx-background-color: text-sec;
+}
+.combo-box-popup .list-view {
+    -fx-background-color: surface-hi;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-effect: dropshadow(gaussian, black, 12, 0.4, 0, 3);
+}
+.combo-box-popup .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: text-pri;
+    -fx-padding: 7 14;
+}
+.combo-box-popup .list-cell:hover {
+    -fx-background-color: derive(surface-hi, 20%);
+}
+.combo-box-popup .list-cell:filled:selected {
+    -fx-background-color: derive(accent, -55%);
+    -fx-text-fill: accent;
+}
+
+/* Status dot shapes (Circle) */
+.status-dot-online {
+    -fx-fill: clr-success;
+    -fx-effect: dropshadow(gaussian, clr-success, 8, 0.6, 0, 0);
+}
+.status-dot-offline {
+    -fx-fill: clr-danger;
+}
+.status-dot-connecting {
+    -fx-fill: clr-warning;
+    -fx-effect: dropshadow(gaussian, clr-warning, 6, 0.4, 0, 0);
+}
+
+.status-label {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 12px;
+}
+.status-label-admin {
+    -fx-text-fill: clr-danger;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+.status-label-online {
+    -fx-text-fill: clr-success;
+    -fx-font-weight: bold;
+    -fx-font-size: 12px;
+}
+
+.btn-reconnect {
+    -fx-background-color: derive(clr-danger, -40%);
+    -fx-text-fill: clr-danger;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+    -fx-border-color: derive(clr-danger, -25%);
+    -fx-border-radius: 6;
+    -fx-padding: 6 14;
+    -fx-cursor: hand;
+    -fx-font-size: 12px;
+}
+.btn-reconnect:hover {
+    -fx-background-color: derive(clr-danger, -30%);
+    -fx-border-color: clr-danger;
+}
+
+.btn-icon {
+    -fx-background-color: surface-hi;
+    -fx-text-fill: text-sec;
+    -fx-font-size: 14px;
+    -fx-background-radius: 6;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-padding: 5 11;
+    -fx-cursor: hand;
+}
+.btn-icon:hover {
+    -fx-text-fill: accent;
+    -fx-border-color: accent;
+    -fx-background-color: derive(surface-hi, 10%);
+}
+
+/* ── STATS BAR ───────────────────────────────────────── */
+.statsbar {
+    -fx-background-color: derive(surface, 30%);
+    -fx-padding: 7 16;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+}
+
+.stat-chip {
+    -fx-background-color: surface-hi;
+    -fx-text-fill: text-sec;
+    -fx-padding: 4 13;
+    -fx-background-radius: 20;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+.stat-chip-green {
+    -fx-background-color: derive(clr-success, -72%);
+    -fx-text-fill: clr-success;
+    -fx-padding: 4 13;
+    -fx-background-radius: 20;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+.stat-chip-orange {
+    -fx-background-color: derive(clr-warning, -72%);
+    -fx-text-fill: clr-warning;
+    -fx-padding: 4 13;
+    -fx-background-radius: 20;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+/* ── TABLE ───────────────────────────────────────────── */
+.book-table {
+    -fx-background-color: bg;
+    -fx-border-color: transparent;
+    -fx-table-cell-border-color: derive(border-col, -10%);
+}
+.book-table .column-header-background {
+    -fx-background-color: surface;
+}
+.book-table .column-header {
+    -fx-background-color: surface;
+    -fx-border-color: transparent border-col transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-size: 38;
+}
+.book-table .column-header .label {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 10;
+    -fx-alignment: CENTER_LEFT;
+}
+.book-table .filler {
+    -fx-background-color: surface;
+}
+.book-table .table-row-cell {
+    -fx-background-color: bg;
+    -fx-border-color: transparent transparent derive(border-col, -15%) transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.book-table .table-row-cell:odd {
+    -fx-background-color: derive(bg, 8%);
+}
+.book-table .table-row-cell:hover {
+    -fx-background-color: surface-hi;
+}
+.book-table .table-row-cell:selected {
+    -fx-background-color: derive(blue, -62%);
+}
+.book-table .table-row-cell:selected:hover {
+    -fx-background-color: derive(blue, -58%);
+}
+.book-table .table-cell {
+    -fx-text-fill: text-pri;
+    -fx-padding: 10 12;
+    -fx-border-color: transparent;
+    -fx-alignment: CENTER_LEFT;
+}
+.book-table .table-row-cell:selected .table-cell {
+    -fx-text-fill: text-pri;
+}
+
+/* Estado badges */
+.badge-available {
+    -fx-background-color: derive(clr-success, -68%);
+    -fx-text-fill: clr-success;
+    -fx-padding: 3 10;
+    -fx-background-radius: 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+.badge-borrowed {
+    -fx-background-color: derive(clr-warning, -68%);
+    -fx-text-fill: clr-warning;
+    -fx-padding: 3 10;
+    -fx-background-radius: 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+/* Empty placeholder */
+.placeholder-text {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+.placeholder-subtext {
+    -fx-text-fill: derive(text-sec, -20%);
+    -fx-font-size: 11px;
+}
+
+/* ── ACTION BAR ──────────────────────────────────────── */
+.actionbar {
+    -fx-background-color: surface;
+    -fx-padding: 10 16;
+    -fx-border-color: border-col;
+    -fx-border-width: 1 0 0 0;
+}
+
+.btn-success {
+    -fx-background-color: derive(clr-success, -60%);
+    -fx-text-fill: clr-success;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+    -fx-border-color: derive(clr-success, -45%);
+    -fx-border-radius: 6;
+    -fx-padding: 7 15;
+    -fx-cursor: hand;
+}
+.btn-success:hover {
+    -fx-background-color: derive(clr-success, -50%);
+    -fx-border-color: clr-success;
+}
+.btn-success:pressed {
+    -fx-background-color: derive(clr-success, -40%);
+}
+
+.btn-primary {
+    -fx-background-color: derive(blue, -55%);
+    -fx-text-fill: blue;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+    -fx-border-color: derive(blue, -38%);
+    -fx-border-radius: 6;
+    -fx-padding: 7 15;
+    -fx-cursor: hand;
+}
+.btn-primary:hover {
+    -fx-background-color: derive(blue, -45%);
+    -fx-border-color: blue;
+}
+.btn-primary:pressed {
+    -fx-background-color: derive(blue, -35%);
+}
+
+.btn-warning {
+    -fx-background-color: derive(clr-warning, -60%);
+    -fx-text-fill: clr-warning;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+    -fx-border-color: derive(clr-warning, -42%);
+    -fx-border-radius: 6;
+    -fx-padding: 7 15;
+    -fx-cursor: hand;
+}
+.btn-warning:hover {
+    -fx-background-color: derive(clr-warning, -50%);
+    -fx-border-color: clr-warning;
+}
+
+.btn-ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: text-sec;
+    -fx-background-radius: 6;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-padding: 7 15;
+    -fx-cursor: hand;
+}
+.btn-ghost:hover {
+    -fx-background-color: surface-hi;
+    -fx-text-fill: text-pri;
+    -fx-border-color: derive(border-col, 30%);
+}
+
+.btn-admin {
+    -fx-background-color: derive(clr-danger, -55%);
+    -fx-text-fill: clr-danger;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+    -fx-border-color: derive(clr-danger, -38%);
+    -fx-border-radius: 6;
+    -fx-padding: 7 15;
+    -fx-cursor: hand;
+}
+.btn-admin:hover {
+    -fx-background-color: derive(clr-danger, -45%);
+    -fx-border-color: clr-danger;
+}
+
+/* ── SIDE PANEL ──────────────────────────────────────── */
+.side-panel {
+    -fx-background-color: surface;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 0 1;
+}
+
+.section-title {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 9.5px;
+    -fx-font-weight: bold;
+    -fx-padding: 13 16 5 16;
+    -fx-background-color: surface;
+}
+
+/* Detail card */
+.book-card {
+    -fx-background-color: surface-hi;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 12 16 14 16;
+}
+.card-placeholder {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 12px;
+    -fx-font-style: italic;
+}
+.det-titulo {
+    -fx-text-fill: text-pri;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-wrap-text: true;
+}
+.det-autor {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 12px;
+}
+.det-chip {
+    -fx-background-color: border-col;
+    -fx-text-fill: derive(text-sec, 20%);
+    -fx-padding: 2 9;
+    -fx-background-radius: 10;
+    -fx-font-size: 10.5px;
+}
+.det-estado-label {
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: text-pri;
+}
+.det-meta {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 11.5px;
+    -fx-wrap-text: true;
+}
+
+/* Estado circle in card */
+.det-dot-available {
+    -fx-fill: clr-success;
+    -fx-effect: dropshadow(gaussian, clr-success, 6, 0.5, 0, 0);
+}
+.det-dot-borrowed {
+    -fx-fill: clr-warning;
+}
+
+/* Notification area */
+.notif-area {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: text-sec;
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 11px;
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+}
+.notif-area .content {
+    -fx-background-color: surface;
+}
+.notif-area:focused .content {
+    -fx-background-color: surface;
+}
+
+/* ── STATUS BAR (bottom) ─────────────────────────────── */
+.statusbar {
+    -fx-background-color: derive(bg, -30%);
+    -fx-padding: 4 16;
+    -fx-border-color: border-col;
+    -fx-border-width: 1 0 0 0;
+}
+.statusbar-text {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 11px;
+}
+.statusbar-version {
+    -fx-text-fill: derive(text-sec, -30%);
+    -fx-font-size: 11px;
+}
+
+/* ── SCROLLBARS ──────────────────────────────────────── */
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+.scroll-bar .track {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.scroll-bar .thumb {
+    -fx-background-color: derive(border-col, 20%);
+    -fx-background-radius: 4;
+}
+.scroll-bar .thumb:hover {
+    -fx-background-color: derive(border-col, 50%);
+}
+.scroll-bar:vertical {
+    -fx-pref-width: 7;
+}
+.scroll-bar:horizontal {
+    -fx-pref-height: 7;
+}
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+    -fx-opacity: 0;
+}
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+}
+.corner {
+    -fx-background-color: bg;
+}
+
+/* ── SEPARATORS ──────────────────────────────────────── */
+.separator .line {
+    -fx-border-color: border-col;
+    -fx-background-color: border-col;
+    -fx-border-width: 1;
+}
+
+/* ── TEXT AREA (generic) ─────────────────────────────── */
+.text-area {
+    -fx-background-color: surface-hi;
+    -fx-background-radius: 6;
+    -fx-border-color: border-col;
+    -fx-border-radius: 6;
+    -fx-text-fill: text-pri;
+    -fx-prompt-text-fill: text-sec;
+    -fx-highlight-fill: derive(blue, -40%);
+    -fx-font-family: "Consolas", monospace;
+    -fx-font-size: 11.5px;
+    -fx-background-insets: 0;
+}
+.text-area .content {
+    -fx-background-color: surface-hi;
+    -fx-background-radius: 6;
+}
+.text-area:focused {
+    -fx-border-color: blue;
+}
+
+/* ── DIALOGS ─────────────────────────────────────────── */
+.dialog-pane {
+    -fx-background-color: surface;
+    -fx-border-color: border-col;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-effect: dropshadow(gaussian, black, 20, 0.5, 0, 4);
+}
+.dialog-pane .header-panel {
+    -fx-background-color: surface-hi;
+    -fx-background-radius: 8 8 0 0;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 16 20;
+}
+.dialog-pane .header-panel .label {
+    -fx-text-fill: text-pri;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+.dialog-pane > .label.content {
+    -fx-text-fill: text-sec;
+    -fx-padding: 10 20;
+}
+.dialog-pane .button-bar {
+    -fx-background-color: surface-hi;
+    -fx-border-color: border-col;
+    -fx-border-width: 1 0 0 0;
+    -fx-background-radius: 0 0 8 8;
+    -fx-padding: 10 16;
+}
+.dialog-pane .label {
+    -fx-text-fill: text-pri;
+}
+.dialog-pane .grid-pane .label {
+    -fx-text-fill: text-sec;
+}
+.dialog-pane .text-field {
+    -fx-background-color: surface-hi;
+    -fx-text-fill: text-pri;
+    -fx-prompt-text-fill: text-sec;
+    -fx-border-color: border-col;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 7 10;
+}
+.dialog-pane .text-field:focused {
+    -fx-border-color: blue;
+}
+.dialog-pane .button-bar .button {
+    -fx-background-color: surface-hi;
+    -fx-text-fill: text-pri;
+    -fx-border-color: border-col;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+    -fx-padding: 7 20;
+}
+.dialog-pane .button-bar .button:hover {
+    -fx-background-color: derive(surface-hi, 25%);
+    -fx-border-color: blue;
+    -fx-text-fill: blue;
+}
+.dialog-pane .button-bar .button:default {
+    -fx-background-color: derive(blue, -45%);
+    -fx-text-fill: blue;
+    -fx-border-color: derive(blue, -30%);
+    -fx-font-weight: bold;
+}
+.dialog-pane .button-bar .button:default:hover {
+    -fx-background-color: derive(blue, -35%);
+    -fx-border-color: blue;
+}
+
+/* ── TAB PANE (Admin) ────────────────────────────────── */
+.tab-pane {
+    -fx-background-color: bg;
+}
+.tab-pane .tab-header-area {
+    -fx-background-color: surface;
+    -fx-padding: 0 0 0 0;
+}
+.tab-pane .tab-header-background {
+    -fx-background-color: surface;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+}
+.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-padding: 10 22;
+    -fx-cursor: hand;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+.tab-pane .tab .tab-label {
+    -fx-text-fill: text-sec;
+    -fx-font-size: 12px;
+}
+.tab-pane .tab:selected {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: accent;
+    -fx-font-weight: bold;
+}
+.tab-pane .tab:hover .tab-label {
+    -fx-text-fill: text-pri;
+}
+.tab-pane .tab-content-area {
+    -fx-background-color: bg;
+    -fx-padding: 0;
+}
+.tab-pane .tab .focus-indicator {
+    -fx-border-color: transparent;
+}
+
+/* ── LIST VIEW (Admin) ───────────────────────────────── */
+.list-view {
+    -fx-background-color: bg;
+    -fx-border-color: transparent;
+    -fx-background-insets: 0;
+}
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: text-pri;
+    -fx-padding: 9 16;
+    -fx-border-color: transparent transparent derive(border-col, -15%) transparent;
+    -fx-border-width: 0 0 1 0;
+}
+.list-cell:odd {
+    -fx-background-color: derive(bg, 8%);
+}
+.list-cell:hover {
+    -fx-background-color: surface-hi;
+}
+.list-cell:selected {
+    -fx-background-color: derive(accent, -58%);
+    -fx-text-fill: text-pri;
+}
+
+/* ── ADMIN HEADER ────────────────────────────────────── */
+.admin-header {
+    -fx-background-color: surface;
+    -fx-padding: 12 16;
+    -fx-border-color: border-col;
+    -fx-border-width: 0 0 1 0;
+}
+.admin-stats-label {
+    -fx-text-fill: text-pri;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}

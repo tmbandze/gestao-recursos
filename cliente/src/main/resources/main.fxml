@@ -2,96 +2,137 @@
 
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.scene.shape.*?>
 <?import javafx.geometry.Insets?>
 
 <BorderPane xmlns="http://javafx.com/javafx/17"
             xmlns:fx="http://javafx.com/fxml/1"
             fx:controller="cliente.ControladorPrincipal">
 
-    <!-- TOPO: barra de pesquisa e filtro -->
+    <!-- ══ TOP BAR ══════════════════════════════════════ -->
     <top>
-        <VBox style="-fx-padding: 10; -fx-background-color: #f0f0f0; -fx-border-color: #ddd; -fx-border-width: 0 0 1 0;">
-            <HBox spacing="10" alignment="CENTER_LEFT">
-                <TextField fx:id="campoPesquisa"
-                           promptText="Pesquisar por título, autor ou categoria..."
-                           prefWidth="380"
-                           onAction="#pesquisar"/>
-                <Button text="Pesquisar" onAction="#pesquisar"/>
-                <Separator orientation="VERTICAL"/>
-                <Label text="Filtro:"/>
-                <ComboBox fx:id="filtroEstado" onAction="#filtrarEstado" prefWidth="130"/>
-                <Region HBox.hgrow="ALWAYS"/>
-                <Label fx:id="labelStatus"
-                       text="Não ligado"
-                       style="-fx-text-fill: #888; -fx-font-weight: bold;"/>
-                <Button fx:id="btnReconectar"
-                        text="Reconectar"
-                        onAction="#reconectar"
-                        style="-fx-background-color: #FF5722; -fx-text-fill: white; -fx-font-weight: bold;"/>
-            </HBox>
-        </VBox>
+        <HBox styleClass="topbar" spacing="10" alignment="CENTER_LEFT">
+
+            <Label text="📚  Biblioteca Digital" styleClass="app-title"/>
+
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <TextField fx:id="campoPesquisa"
+                       promptText="Pesquisar título, autor ou categoria..."
+                       prefWidth="320"
+                       styleClass="search-field"
+                       onAction="#pesquisar"/>
+            <Button text="⌕" onAction="#pesquisar" styleClass="btn-icon"/>
+
+            <Separator orientation="VERTICAL"/>
+
+            <ComboBox fx:id="filtroEstado"
+                      onAction="#filtrarEstado"
+                      prefWidth="155"
+                      styleClass="filter-combo"/>
+
+            <Separator orientation="VERTICAL"/>
+
+            <Circle fx:id="statusDot" radius="5" styleClass="status-dot-offline"/>
+            <Label fx:id="labelStatus" text="Não ligado" styleClass="status-label"/>
+            <Button fx:id="btnReconectar"
+                    text="Reconectar"
+                    onAction="#reconectar"
+                    styleClass="btn-reconnect"/>
+
+        </HBox>
     </top>
 
-    <!-- CENTRO: tabela de livros -->
+    <!-- ══ CENTER: stats + tabela + acções ══════════════ -->
     <center>
-        <TableView fx:id="tabelaLivros" VBox.vgrow="ALWAYS">
-            <columns>
-                <TableColumn fx:id="colTitulo"    text="Título"    prefWidth="280"/>
-                <TableColumn fx:id="colAutor"     text="Autor"     prefWidth="160"/>
-                <TableColumn fx:id="colCategoria" text="Categoria" prefWidth="140"/>
-                <TableColumn fx:id="colEstado"    text="Estado"    prefWidth="110"/>
-            </columns>
-            <placeholder>
-                <Label text="Sem livros. Insere o primeiro ou verifica a ligação ao servidor."/>
-            </placeholder>
-        </TableView>
+        <VBox>
+
+            <!-- Stats chips -->
+            <HBox styleClass="statsbar" spacing="10" alignment="CENTER_LEFT">
+                <Label fx:id="labelTotalLivros"  text="—  livros"       styleClass="stat-chip"/>
+                <Label fx:id="labelDisponiveis"  text="—  disponíveis"  styleClass="stat-chip-green"/>
+                <Label fx:id="labelRequisitados" text="—  emprestados"  styleClass="stat-chip-orange"/>
+            </HBox>
+
+            <!-- Tabela de livros -->
+            <TableView fx:id="tabelaLivros" VBox.vgrow="ALWAYS" styleClass="book-table">
+                <columns>
+                    <TableColumn fx:id="colTitulo"    text="TÍTULO"    prefWidth="290"/>
+                    <TableColumn fx:id="colAutor"     text="AUTOR"     prefWidth="170"/>
+                    <TableColumn fx:id="colCategoria" text="CATEGORIA" prefWidth="140"/>
+                    <TableColumn fx:id="colEstado"    text="ESTADO"    prefWidth="130"/>
+                </columns>
+                <placeholder>
+                    <VBox alignment="CENTER" spacing="8">
+                        <Label text="📭" style="-fx-font-size: 28;"/>
+                        <Label text="Catálogo vazio" styleClass="placeholder-text"/>
+                        <Label text="Insere o primeiro livro ou verifica a ligação ao servidor"
+                               styleClass="placeholder-subtext"/>
+                    </VBox>
+                </placeholder>
+            </TableView>
+
+            <!-- Barra de acções -->
+            <HBox styleClass="actionbar" spacing="8" alignment="CENTER_LEFT">
+                <Button text="+ Inserir Livro"  onAction="#inserirLivro"   styleClass="btn-success"/>
+                <Button text="↓ Requisitar"     onAction="#requisitarLivro" styleClass="btn-primary"/>
+                <Button text="↑ Devolver"       onAction="#devolverLivro"  styleClass="btn-warning"/>
+                <Separator orientation="VERTICAL"/>
+                <Button text="Relatório"  onAction="#verRelatorio"  styleClass="btn-ghost"/>
+                <Button text="Histórico"  onAction="#verHistorico"  styleClass="btn-ghost"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="btnAdmin"
+                        text="⚙  Admin"
+                        onAction="#abrirPainelAdmin"
+                        styleClass="btn-admin"/>
+            </HBox>
+
+        </VBox>
     </center>
 
-    <!-- DIREITA: painel de detalhes -->
+    <!-- ══ RIGHT: detalhes + notificações ═══════════════ -->
     <right>
-        <VBox spacing="8" style="-fx-padding: 10;" prefWidth="230">
-            <Label text="Detalhes do Livro" style="-fx-font-weight: bold; -fx-font-size: 13;"/>
-            <TextArea fx:id="painelDetalhes"
-                      prefHeight="220"
+        <VBox styleClass="side-panel" prefWidth="265">
+
+            <Label text="D E T A L H E S" styleClass="section-title"/>
+
+            <!-- Card do livro seleccionado -->
+            <VBox fx:id="cardDetalhes" styleClass="book-card" spacing="5">
+                <Label fx:id="cardPlaceholder"
+                       text="← Selecciona um livro da lista"
+                       styleClass="card-placeholder"/>
+                <Label fx:id="detTitulo"    text="" styleClass="det-titulo"    wrapText="true"/>
+                <Label fx:id="detAutor"     text="" styleClass="det-autor"/>
+                <Label fx:id="detCategoria" text="" styleClass="det-chip"/>
+                <HBox spacing="6" alignment="CENTER_LEFT">
+                    <Circle fx:id="detEstadoCirculo" radius="5"/>
+                    <Label  fx:id="detEstado" text="" styleClass="det-estado-label"/>
+                </HBox>
+                <Label fx:id="detCom"   text="" styleClass="det-meta" wrapText="true"/>
+                <Label fx:id="detFila"  text="" styleClass="det-meta" wrapText="true"/>
+                <!-- Mantido por compatibilidade interna, não visível -->
+                <TextArea fx:id="painelDetalhes" visible="false" managed="false"/>
+            </VBox>
+
+            <Label text="N O T I F I C A Ç Õ E S" styleClass="section-title"/>
+
+            <TextArea fx:id="painelNotificacoes"
+                      VBox.vgrow="ALWAYS"
                       editable="false"
                       wrapText="true"
-                      style="-fx-font-family: monospace; -fx-font-size: 12;"/>
+                      styleClass="notif-area"/>
         </VBox>
     </right>
 
-    <!-- BAIXO: botões de acção e painel de notificações -->
+    <!-- ══ BOTTOM: status bar ═══════════════════════════ -->
     <bottom>
-        <VBox style="-fx-padding: 10; -fx-background-color: #f8f8f8; -fx-border-color: #ddd; -fx-border-width: 1 0 0 0;">
-            <HBox spacing="8" style="-fx-padding: 0 0 8 0;">
-                <Button text="Inserir Livro"
-                        onAction="#inserirLivro"
-                        style="-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-font-weight: bold;"
-                        prefWidth="120"/>
-                <Button text="Requisitar"
-                        onAction="#requisitarLivro"
-                        style="-fx-background-color: #2196F3; -fx-text-fill: white; -fx-font-weight: bold;"
-                        prefWidth="100"/>
-                <Button text="Devolver"
-                        onAction="#devolverLivro"
-                        style="-fx-background-color: #FF9800; -fx-text-fill: white; -fx-font-weight: bold;"
-                        prefWidth="100"/>
-                <Separator orientation="VERTICAL"/>
-                <Button text="Relatório"  onAction="#verRelatorio"  prefWidth="90"/>
-                <Button text="Histórico" onAction="#verHistorico" prefWidth="90"/>
-                <Separator orientation="VERTICAL"/>
-                <Button fx:id="btnAdmin"
-                        text="Painel Admin"
-                        onAction="#abrirPainelAdmin"
-                        style="-fx-background-color: #E53935; -fx-text-fill: white; -fx-font-weight: bold;"
-                        prefWidth="110"/>
-            </HBox>
-            <Label text="Notificações:" style="-fx-font-weight: bold;"/>
-            <TextArea fx:id="painelNotificacoes"
-                      prefHeight="110"
-                      editable="false"
-                      wrapText="true"
-                      style="-fx-font-family: monospace; -fx-font-size: 11;"/>
-        </VBox>
+        <HBox styleClass="statusbar" spacing="10" alignment="CENTER_LEFT">
+            <Label fx:id="statusBarDot" text="●" styleClass="statusbar-text"/>
+            <Label fx:id="statusBarServer" text="Servidor: localhost:8080" styleClass="statusbar-text"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Label text="Gestão de Recursos  v1.0  |  SD 2025/2026"
+                   styleClass="statusbar-version"/>
+        </HBox>
     </bottom>
 
 </BorderPane>

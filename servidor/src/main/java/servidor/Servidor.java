@@ -39,17 +39,19 @@ public class Servidor {
         app.post("/api/registar", ctx -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> b = ctx.bodyAsClass(Map.class);
-            String nome     = str(b, "nome");
-            String email    = str(b, "email");
-            String password = str(b, "password");
+            String nomeInput = str(b, "nome");
+            String email     = str(b, "email");
+            String password  = str(b, "password");
 
-            var r = gestorUtilizadores.registar(nome, email, password);
+            var r = gestorUtilizadores.registar(nomeInput, email, password);
             if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
 
-            String sid = UUID.randomUUID().toString();
-            sessoes.put(sid, (String) r.get("nome"));
-            logger.registar("REGISTAR", (String) r.get("nome"), email);
-            ctx.json(Map.of("sessionId", sid, "nome", r.get("nome"), "email", r.get("email")));
+            String sid  = UUID.randomUUID().toString();
+            String nome = (String) r.get("nome");
+            sessoes.put(sid, nome);
+            logger.registar("REGISTAR", nome, email);
+            ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
+                            "isAdmin", nome.equalsIgnoreCase("admin")));
         });
 
         app.post("/api/login", ctx -> {
@@ -61,10 +63,12 @@ public class Servidor {
             var r = gestorUtilizadores.login(email, password);
             if (r.containsKey("erro")) { ctx.status(401).json(r); return; }
 
-            String sid = UUID.randomUUID().toString();
-            sessoes.put(sid, (String) r.get("nome"));
-            logger.registar("LOGIN", (String) r.get("nome"), email);
-            ctx.json(Map.of("sessionId", sid, "nome", r.get("nome"), "email", r.get("email")));
+            String sid  = UUID.randomUUID().toString();
+            String nome = (String) r.get("nome");
+            sessoes.put(sid, nome);
+            logger.registar("LOGIN", nome, email);
+            ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
+                            "isAdmin", nome.equalsIgnoreCase("admin")));
         });
 
         app.post("/api/logout", ctx -> {

@@ -214,30 +214,30 @@ public class ControladorPrincipal {
     public void recarregarLivros() {
         if (cliente == null || !cliente.isConectado()) return;
         String termo = campoPesquisa.getText().trim();
-        String resposta;
-        if (!termo.isEmpty()) {
-            resposta = cliente.enviar(Protocolo.PESQUISAR + "|" + termo);
-        } else if ("Disponíveis".equals(filtroEstado.getValue())) {
-            resposta = cliente.enviar(Protocolo.LISTAR_DISPONIVEIS);
-        } else {
-            resposta = cliente.enviar(Protocolo.LISTAR);
-        }
+        // Sempre LISTAR para ter o catálogo completo (stats globais);
+        // PESQUISAR quando há texto — filtro do ComboBox aplicado client-side em ambos os casos.
+        String resposta = termo.isEmpty()
+            ? cliente.enviar(Protocolo.LISTAR)
+            : cliente.enviar(Protocolo.PESQUISAR + "|" + termo);
         parsearLivros(resposta);
-        atualizarStats();
     }
 
     private void parsearLivros(String resposta) {
         if (resposta == null || !resposta.startsWith(Protocolo.LIVROS + "|")) return;
         livros.clear();
         String dados = resposta.substring(Protocolo.LIVROS.length() + 1);
-        if (dados.isEmpty()) return;
-        for (String ls : dados.split(";")) {
-            String[] c = ls.split(",", 5);
-            if (c.length == 5) livros.add(new Livro(c[0], c[1], c[2], c[3], c[4]));
+        if (!dados.isEmpty()) {
+            for (String ls : dados.split(";")) {
+                String[] c = ls.split(",", 5);
+                if (c.length == 5) livros.add(new Livro(c[0], c[1], c[2], c[3], c[4]));
+            }
         }
-        if ("Requisitados".equals(filtroEstado.getValue())) {
-            livros.removeIf(Livro::isDisponivel);
-        }
+        // Stats calculadas antes do filtro → reflectem sempre o catálogo completo
+        atualizarStats();
+        // Filtro do ComboBox aplicado client-side (funciona combinado com pesquisa)
+        String filtro = filtroEstado.getValue();
+        if ("Disponíveis".equals(filtro))  livros.removeIf(l -> !l.isDisponivel());
+        if ("Requisitados".equals(filtro)) livros.removeIf(Livro::isDisponivel);
     }
 
     private void atualizarStats() {

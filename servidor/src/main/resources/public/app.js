@@ -1,96 +1,120 @@
 // ── Estado ────────────────────────────────────────────────────────────
-let sessionId      = localStorage.getItem('sessionId');
-let nomeUtilizador = localStorage.getItem('nomeUtilizador');
-let livros         = [];
-let filtro         = 'todos';
-let pesquisaActual = '';
-let sseSource      = null;
+let sessionId = localStorage.getItem('sid');
+let nomeUser  = localStorage.getItem('nome');
+let livros    = [];
+let filtro    = 'todos';
+let pesquisa  = '';
+let sse       = null;
+
+// ── Tabs ──────────────────────────────────────────────────────────────
+
+function switchTab(t) {
+    const isSi = t === 'si';
+    document.getElementById('form-si').classList.toggle('active',  isSi);
+    document.getElementById('form-su').classList.toggle('active', !isSi);
+    document.getElementById('tab-si').classList.toggle('active',   isSi);
+    document.getElementById('tab-su').classList.toggle('active',  !isSi);
+    document.getElementById('tab-pill').classList.toggle('right',  !isSi);
+}
 
 // ── Autenticação ──────────────────────────────────────────────────────
 
-async function login() {
-    const nome = document.getElementById('login-nome').value.trim();
-    if (!nome) { toast('Introduz o teu nome', 'error'); return; }
+async function signIn() {
+    const email    = v('si-email');
+    const password = v('si-pw');
+    if (!email || !password) { toast('Preenche todos os campos', 'err'); return; }
+    const r = await api('/api/login', 'POST', { email, password });
+    if (r.erro) { toast(r.erro, 'err'); return; }
+    iniciarSessao(r);
+}
 
-    const r = await api('/api/login', 'POST', { nome });
-    if (r.erro) { toast(r.erro, 'error'); return; }
+async function signUp() {
+    const nome     = v('su-nome');
+    const email    = v('su-email');
+    const password = v('su-pw');
+    const confirm  = v('su-pw2');
+    if (!nome || !email || !password)  { toast('Preenche todos os campos', 'err'); return; }
+    if (password.length < 6)           { toast('Password: mínimo 6 caracteres', 'err'); return; }
+    if (password !== confirm)          { toast('As passwords não coincidem', 'err'); return; }
+    const r = await api('/api/registar', 'POST', { nome, email, password });
+    if (r.erro) { toast(r.erro, 'err'); return; }
+    iniciarSessao(r);
+}
 
-    sessionId      = r.sessionId;
-    nomeUtilizador = r.nome;
-    localStorage.setItem('sessionId', sessionId);
-    localStorage.setItem('nomeUtilizador', nomeUtilizador);
+function iniciarSessao(r) {
+    sessionId = r.sessionId;
+    nomeUser  = r.nome;
+    localStorage.setItem('sid',  sessionId);
+    localStorage.setItem('nome', nomeUser);
     mostrarMain();
 }
 
 async function logout() {
     await api('/api/logout', 'POST');
-    localStorage.removeItem('sessionId');
-    localStorage.removeItem('nomeUtilizador');
-    if (sseSource) { sseSource.close(); sseSource = null; }
+    localStorage.removeItem('sid');
+    localStorage.removeItem('nome');
+    if (sse) { sse.close(); sse = null; }
+    sessionId = nomeUser = null;
     document.getElementById('main-view').classList.remove('active');
-    document.getElementById('login-view').style.display = 'flex';
-    document.getElementById('login-nome').value = '';
-    sessionId = nomeUtilizador = null;
+    document.getElementById('auth-view').style.display = 'flex';
+    switchTab('si');
 }
 
-function mostrarMain() {
-    document.getElementById('login-view').style.display = 'none';
-    document.getElementById('main-view').classList.add('active');
-    document.getElementById('user-badge').textContent = '👤 ' + nomeUtilizador;
+// ── Mostrar app principal ─────────────────────────────────────────────
 
-    if (nomeUtilizador.toLowerCase() === 'admin') {
-        document.getElementById('admin-panel').style.display = 'block';
-        carregarLog();
+function mostrarMain() {
+    document.getElementById('auth-view').style.display = 'none';
+    document.getElementById('main-view').classList.add('active');
+
+    const initials = nomeUser.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    document.getElementById('user-av').textContent = initials;
+    document.getElementById('user-nm').textContent = nomeUser;
+
+    if (nomeUser.toLowerCase() === 'admin') {
+        document.getElementById('admin-box').style.display = 'block';
+        recarregarLog();
     }
 
     carregarLivros();
-    conectarSSE();
+    ligarSSE();
 }
 
-// ── API helper ────────────────────────────────────────────────────────
+// ── API ───────────────────────────────────────────────────────────────
 
 async function api(path, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
-    if (sessionId) opts.headers['X-Session-ID'] = sessionId;
-    if (body)      opts.body = JSON.stringify(body);
+    const h = { 'Content-Type': 'application/json' };
+    if (sessionId) h['X-Session-ID'] = sessionId;
     try {
-        const res = await fetch(path, opts);
+        const res = await fetch(path, { method, headers: h, body: body ? JSON.stringify(body) : null });
         return await res.json();
-    } catch {
-        return { erro: 'Erro de ligação ao servidor' };
-    }
+    } catch { return { erro: 'Erro de ligação ao servidor' }; }
 }
 
-// ── SSE (eventos em tempo real) ───────────────────────────────────────
+// ── SSE ───────────────────────────────────────────────────────────────
 
-function conectarSSE() {
-    if (sseSource) sseSource.close();
-    sseSource = new EventSource(`/api/eventos?sid=${sessionId}`);
-
-    sseSource.addEventListener('atualizacao', () => {
-        carregarLivros();
-        toast('Lista de livros actualizada', 'info');
-    });
-
-    sseSource.addEventListener('notificacao', e => {
-        toast('🔔 ' + e.data, 'success');
-    });
-
-    sseSource.onerror = () => { /* reconecta automaticamente */ };
+function ligarSSE() {
+    if (sse) sse.close();
+    sse = new EventSource(`/api/eventos?sid=${sessionId}`);
+    sse.addEventListener('atualizacao', () => { carregarLivros(); toast('Lista actualizada', 'inf'); });
+    sse.addEventListener('notificacao', e  => toast('🔔 ' + e.data, 'ok'));
+    sse.onerror = () => {};
 }
 
 // ── Livros ────────────────────────────────────────────────────────────
 
 async function carregarLivros() {
-    const dados = await api('/api/livros');
-    if (Array.isArray(dados)) { livros = dados; actualizarStats(); renderizar(); }
+    const r = await api('/api/livros');
+    if (!Array.isArray(r)) return;
+    livros = r;
+    actualizarStats();
+    renderGrid();
 }
 
 async function pesquisar() {
-    pesquisaActual = document.getElementById('search-input').value.trim();
-    if (pesquisaActual) {
-        const dados = await api('/api/livros/pesquisa?q=' + encodeURIComponent(pesquisaActual));
-        if (Array.isArray(dados)) { livros = dados; renderizar(); }
+    pesquisa = v('search-input');
+    if (pesquisa) {
+        const r = await api('/api/livros/pesquisa?q=' + encodeURIComponent(pesquisa));
+        if (Array.isArray(r)) { livros = r; renderGrid(); }
     } else {
         carregarLivros();
     }
@@ -98,170 +122,165 @@ async function pesquisar() {
 
 function actualizarStats() {
     const disp = livros.filter(l => l.estado === 'DISPONIVEL').length;
-    document.getElementById('stat-total').textContent = livros.length;
-    document.getElementById('stat-disp').textContent  = disp;
-    document.getElementById('stat-req').textContent   = livros.length - disp;
+    set('s-total', livros.length);
+    set('s-disp',  disp);
+    set('s-req',   livros.length - disp);
 }
 
 function setFiltro(f, btn) {
     filtro = f;
-    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.ft').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    renderizar();
+    renderGrid();
 }
 
-function renderizar() {
+function renderGrid() {
     let lista = livros;
-    if (filtro === 'disponiveis')  lista = lista.filter(l => l.estado === 'DISPONIVEL');
-    if (filtro === 'requisitados') lista = lista.filter(l => l.estado !== 'DISPONIVEL');
+    if (filtro === 'disp') lista = lista.filter(l => l.estado === 'DISPONIVEL');
+    if (filtro === 'req')  lista = lista.filter(l => l.estado !== 'DISPONIVEL');
 
-    const grid = document.getElementById('books-grid');
+    const grid = document.getElementById('grid');
     if (!lista.length) {
-        grid.innerHTML = `<div class="empty-state">
-            <div class="icon">📭</div>
-            <div>${pesquisaActual ? 'Sem resultados para "' + esc(pesquisaActual) + '"' : 'Sem livros disponíveis'}</div>
+        grid.innerHTML = `<div class="empty">
+            <div class="empty-icon">📭</div>
+            <p>${pesquisa ? `Sem resultados para "${esc(pesquisa)}"` : 'Nenhum livro encontrado'}</p>
         </div>`;
         return;
     }
 
     grid.innerHTML = lista.map(l => `
-        <div class="book-card ${l.estado !== 'DISPONIVEL' ? 'requisitado' : ''}"
-             onclick="abrirDetalhes('${l.id}')">
-            <div class="book-title">${esc(l.titulo)}</div>
-            <div class="book-author">${esc(l.autor)}</div>
-            <div class="book-meta">
-                <span class="badge ${l.estado === 'DISPONIVEL' ? 'badge-success' : 'badge-warning'}">
-                    ${l.estado === 'DISPONIVEL' ? '✓ Disponível' : '⏳ Requisitado'}
+        <article class="book ${l.estado === 'DISPONIVEL' ? 'av' : 'req'}"
+                 onclick="abrirDetalhes('${l.id}')">
+            <div class="book-t">${esc(l.titulo)}</div>
+            <div class="book-a">${esc(l.autor)}</div>
+            <div class="book-f">
+                <span class="badge ${l.estado === 'DISPONIVEL' ? 'b-green' : 'b-gold'}">
+                    ${l.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
                 </span>
-                <span class="badge badge-info">${esc(l.categoria)}</span>
+                <span class="badge b-muted">${esc(l.categoria)}</span>
             </div>
-        </div>`).join('');
+        </article>`).join('');
 }
 
 // ── Detalhes ──────────────────────────────────────────────────────────
 
 async function abrirDetalhes(id) {
     const d = await api('/api/livros/' + id);
-    if (d.erro) { toast(d.erro, 'error'); return; }
+    if (d.erro) { toast(d.erro, 'err'); return; }
 
-    document.getElementById('detalhe-titulo').textContent = d.titulo;
+    document.getElementById('det-titulo').textContent = d.titulo;
 
-    const filaHtml = d.filaEspera && d.filaEspera.length
-        ? `<div class="fila-list">${d.filaEspera.map((n, i) =>
-            `<div class="fila-item">${i + 1}. ${esc(n)}</div>`).join('')}</div>`
-        : '<span style="color:var(--text-muted)">—</span>';
+    const filaHtml = d.filaEspera?.length
+        ? `<div class="queue-list">${d.filaEspera.map((n, i) =>
+            `<div class="queue-item">${i + 1}. ${esc(n)}</div>`).join('')}</div>`
+        : '<span style="color:var(--tx-d)">—</span>';
 
-    document.getElementById('detalhe-conteudo').innerHTML = `
-        <div class="detail-row"><span class="detail-label">Autor</span>
-            <span class="detail-value">${esc(d.autor)}</span></div>
-        <div class="detail-row"><span class="detail-label">Categoria</span>
-            <span class="detail-value">${esc(d.categoria)}</span></div>
-        <div class="detail-row"><span class="detail-label">Estado</span>
-            <span class="detail-value">
-                <span class="badge ${d.estado === 'DISPONIVEL' ? 'badge-success' : 'badge-warning'}">
-                    ${d.estado === 'DISPONIVEL' ? '✓ Disponível' : '⏳ Requisitado'}
+    document.getElementById('det-body').innerHTML = `
+        <div class="drow"><span class="dlabel">Autor</span>
+            <span class="dval">${esc(d.autor)}</span></div>
+        <div class="drow"><span class="dlabel">Categoria</span>
+            <span class="dval">${esc(d.categoria)}</span></div>
+        <div class="drow"><span class="dlabel">Estado</span>
+            <span class="dval">
+                <span class="badge ${d.estado === 'DISPONIVEL' ? 'b-green' : 'b-gold'}">
+                    ${d.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
                 </span>
             </span></div>
         ${d.estado !== 'DISPONIVEL' ? `
-        <div class="detail-row"><span class="detail-label">Com</span>
-            <span class="detail-value">${esc(d.estudanteActual || '—')}</span></div>` : ''}
-        <div class="detail-row"><span class="detail-label">Fila espera</span>
-            <span class="detail-value">${filaHtml}</span></div>`;
+        <div class="drow"><span class="dlabel">Com</span>
+            <span class="dval">${esc(d.estudanteActual || '—')}</span></div>` : ''}
+        <div class="drow"><span class="dlabel">Fila</span>
+            <span class="dval">${filaHtml}</span></div>`;
 
-    const acoes = document.getElementById('detalhe-acoes');
-    acoes.innerHTML = '';
+    const acts = document.getElementById('det-acts');
+    acts.innerHTML = '';
 
     if (d.estado === 'DISPONIVEL') {
-        acoes.appendChild(btn('📖 Requisitar', 'btn-success', () => requisitar(id)));
-    } else if (d.estudanteActual === nomeUtilizador) {
-        acoes.appendChild(btn('↩ Devolver', 'btn-danger', () => devolver(id)));
+        acts.appendChild(mkBtn('📖 Requisitar', 'btn-green', () => acaoLivro(id, 'requisitar')));
+    } else if (d.estudanteActual === nomeUser) {
+        acts.appendChild(mkBtn('↩ Devolver', 'btn-red', () => acaoLivro(id, 'devolver')));
     } else {
-        acoes.appendChild(btn('⏳ Entrar na fila', 'btn-ghost', () => requisitar(id)));
+        acts.appendChild(mkBtn('⏳ Entrar na fila', 'btn-ghost', () => acaoLivro(id, 'requisitar')));
     }
 
-    abrirModal('modal-detalhes');
+    openOv('ov-det');
 }
 
-// ── Acções ────────────────────────────────────────────────────────────
-
-async function requisitar(id) {
-    fecharModal('modal-detalhes');
-    const r = await api('/api/livros/' + id + '/requisitar', 'POST');
-    r.erro ? toast(r.erro, 'error') : toast(r.mensagem, 'success');
+async function acaoLivro(id, acao) {
+    closeOv('ov-det');
+    const r = await api(`/api/livros/${id}/${acao}`, 'POST');
+    r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
     carregarLivros();
 }
 
-async function devolver(id) {
-    fecharModal('modal-detalhes');
-    const r = await api('/api/livros/' + id + '/devolver', 'POST');
-    r.erro ? toast(r.erro, 'error') : toast(r.mensagem, 'success');
-    carregarLivros();
-}
+// ── Adicionar livro ───────────────────────────────────────────────────
+
+function abrirAdd() { openOv('ov-add'); document.getElementById('add-t').focus(); }
 
 async function adicionarLivro() {
-    const titulo    = document.getElementById('add-titulo').value.trim();
-    const autor     = document.getElementById('add-autor').value.trim();
-    const categoria = document.getElementById('add-categoria').value.trim() || 'Geral';
-    if (!titulo || !autor) { toast('Título e autor são obrigatórios', 'error'); return; }
-
+    const titulo    = v('add-t');
+    const autor     = v('add-a');
+    const categoria = v('add-c') || 'Geral';
+    if (!titulo || !autor) { toast('Título e autor obrigatórios', 'err'); return; }
     const r = await api('/api/livros', 'POST', { titulo, autor, categoria });
-    fecharModal('modal-adicionar');
-    ['add-titulo','add-autor','add-categoria'].forEach(id => document.getElementById(id).value = '');
-    r.erro ? toast(r.erro, 'error') : toast('Livro adicionado!', 'success');
+    closeOv('ov-add');
+    ['add-t','add-a','add-c'].forEach(id => set(id, ''));
+    r.erro ? toast(r.erro, 'err') : toast('Livro adicionado!', 'ok');
     carregarLivros();
 }
 
+// ── Histórico ─────────────────────────────────────────────────────────
+
 async function abrirHistorico() {
-    abrirModal('modal-historico');
+    openOv('ov-hist');
     const r = await api('/api/historico');
-    document.getElementById('historico-box').textContent = r.log || '(sem registos)';
+    document.getElementById('hist-log').textContent = r.log || '(sem registos)';
 }
 
-async function carregarLog() {
+async function recarregarLog() {
     const r = await api('/api/historico');
-    document.getElementById('log-box').textContent = r.log || '(sem registos)';
+    document.getElementById('admin-log').textContent = r.log || '(sem registos)';
 }
 
 // ── Modais ────────────────────────────────────────────────────────────
 
-const abrirModal  = id => document.getElementById(id).classList.add('open');
-const fecharModal = id => document.getElementById(id).classList.remove('open');
+const openOv  = id => document.getElementById(id).classList.add('open');
+const closeOv = id => document.getElementById(id).classList.remove('open');
 
-function abrirModalAdicionar() {
-    abrirModal('modal-adicionar');
-    document.getElementById('add-titulo').focus();
-}
-
-document.querySelectorAll('.modal-overlay').forEach(o =>
+document.querySelectorAll('.ov').forEach(o =>
     o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); }));
 
 // ── Toasts ────────────────────────────────────────────────────────────
 
-function toast(msg, tipo = 'info') {
-    const el = Object.assign(document.createElement('div'), { className: `toast ${tipo}`, textContent: msg });
-    document.getElementById('toast-container').appendChild(el);
+function toast(msg, tipo = 'inf') {
+    const el = document.createElement('div');
+    el.className = `toast ${tipo}`;
+    el.textContent = msg;
+    document.getElementById('toasts').appendChild(el);
     setTimeout(() => el.remove(), 4000);
 }
 
-// ── Utilitários ───────────────────────────────────────────────────────
+// ── Utils ─────────────────────────────────────────────────────────────
+
+const v   = id => document.getElementById(id)?.value?.trim() ?? '';
+const set = (id, val) => { const el = document.getElementById(id); if (el) el.value !== undefined ? el.value = val : el.textContent = val; };
 
 function esc(s) {
     if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function btn(texto, classe, onclick) {
+function mkBtn(text, cls, fn) {
     const b = document.createElement('button');
-    b.className = 'btn ' + classe;
-    b.textContent = texto;
-    b.onclick = onclick;
+    b.className = `btn ${cls}`; b.textContent = text; b.onclick = fn;
     return b;
 }
 
-// ── Inicialização ─────────────────────────────────────────────────────
+// ── Enter keys ────────────────────────────────────────────────────────
 
-document.getElementById('login-nome').addEventListener('keydown', e => {
-    if (e.key === 'Enter') login();
-});
+document.getElementById('si-pw').addEventListener('keydown',  e => { if (e.key === 'Enter') signIn(); });
+document.getElementById('su-pw2').addEventListener('keydown', e => { if (e.key === 'Enter') signUp(); });
 
-if (sessionId && nomeUtilizador) mostrarMain();
+// ── Restaurar sessão ──────────────────────────────────────────────────
+
+if (sessionId && nomeUser) mostrarMain();

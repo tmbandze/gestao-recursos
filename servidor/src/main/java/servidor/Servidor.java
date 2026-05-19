@@ -14,13 +14,15 @@ public class Servidor {
     private static final int PORTA = 8080;
 
     private final GestorLivros gestorLivros;
+    private final GestorUtilizadores gestorUtilizadores;
     private final Logger logger;
-    private final Map<String, String> sessoes = new ConcurrentHashMap<>();      // sessionId → nome
+    private final Map<String, String> sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
 
     public Servidor() {
-        gestorLivros = new GestorLivros(new BaseDados(), this);
-        logger = new Logger();
+        gestorLivros       = new GestorLivros(new BaseDados(), this);
+        gestorUtilizadores = new GestorUtilizadores(new BaseDadosUtilizadores());
+        logger             = new Logger();
     }
 
     public void iniciar() {
@@ -34,15 +36,35 @@ public class Servidor {
         });
 
         // ── Autenticação ──────────────────────────────────────────────
+        app.post("/api/registar", ctx -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String nome     = str(b, "nome");
+            String email    = str(b, "email");
+            String password = str(b, "password");
+
+            var r = gestorUtilizadores.registar(nome, email, password);
+            if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
+
+            String sid = UUID.randomUUID().toString();
+            sessoes.put(sid, (String) r.get("nome"));
+            logger.registar("REGISTAR", (String) r.get("nome"), email);
+            ctx.json(Map.of("sessionId", sid, "nome", r.get("nome"), "email", r.get("email")));
+        });
+
         app.post("/api/login", ctx -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> b = ctx.bodyAsClass(Map.class);
-            String nome = b.get("nome") != null ? b.get("nome").toString().trim() : "";
-            if (nome.isBlank()) { ctx.status(400).json(Map.of("erro", "Nome inválido")); return; }
+            String email    = str(b, "email");
+            String password = str(b, "password");
+
+            var r = gestorUtilizadores.login(email, password);
+            if (r.containsKey("erro")) { ctx.status(401).json(r); return; }
+
             String sid = UUID.randomUUID().toString();
-            sessoes.put(sid, nome);
-            logger.registar("LOGIN", nome, "-");
-            ctx.json(Map.of("sessionId", sid, "nome", nome));
+            sessoes.put(sid, (String) r.get("nome"));
+            logger.registar("LOGIN", (String) r.get("nome"), email);
+            ctx.json(Map.of("sessionId", sid, "nome", r.get("nome"), "email", r.get("email")));
         });
 
         app.post("/api/logout", ctx -> {
@@ -67,17 +89,14 @@ public class Servidor {
             String nome = autenticar(ctx); if (nome == null) return;
             @SuppressWarnings("unchecked")
             Map<String, Object> b = ctx.bodyAsClass(Map.class);
-            String titulo    = b.get("titulo")    != null ? b.get("titulo").toString()    : "";
-            String autor     = b.get("autor")     != null ? b.get("autor").toString()     : "";
-            String categoria = b.get("categoria") != null ? b.get("categoria").toString() : "Geral";
-            var r = gestorLivros.inserir(titulo, autor, categoria, nome);
-            if (r.containsKey("ok")) logger.registar("INSERIR", nome, titulo);
+            var r = gestorLivros.inserir(str(b,"titulo"), str(b,"autor"), str(b,"categoria"), nome);
+            if (r.containsKey("ok")) logger.registar("INSERIR", nome, str(b,"titulo"));
             ctx.json(r);
         });
 
         app.post("/api/livros/{id}/requisitar", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
-            String id = ctx.pathParam("id");
+            String id   = ctx.pathParam("id");
             var r = gestorLivros.requisitar(id, nome);
             if (r.containsKey("ok")) logger.registar("REQUISITAR", nome, id);
             ctx.json(r);
@@ -85,7 +104,7 @@ public class Servidor {
 
         app.post("/api/livros/{id}/devolver", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
-            String id = ctx.pathParam("id");
+            String id   = ctx.pathParam("id");
             var r = gestorLivros.devolver(id, nome);
             if (r.containsKey("ok")) logger.registar("DEVOLVER", nome, id);
             ctx.json(r);
@@ -103,15 +122,11 @@ public class Servidor {
 
         app.get("/api/admin/sistema", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
-            if (!nome.equalsIgnoreCase("admin")) {
-                ctx.status(403).json(Map.of("erro", "Acesso negado")); return;
-            }
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
             ctx.json(gestorLivros.relatorioAdmin());
         });
 
-        // ── SSE — eventos em tempo real ───────────────────────────────
-        // O browser envia sessionId como query param porque o EventSource
-        // nativo não suporta headers personalizados.
+        // ── SSE ───────────────────────────────────────────────────────
         app.sse("/api/eventos", client -> {
             String sid  = client.ctx().queryParam("sid");
             String nome = sessoes.get(sid);
@@ -132,17 +147,20 @@ public class Servidor {
         return nome;
     }
 
-    /** Envia evento SSE a todos os clientes excepto o que originou a acção. */
     public void notificarTodos(String evento, String dados, String excepto) {
         sseClientes.forEach((nome, client) -> {
             if (!nome.equals(excepto)) client.sendEvent(evento, dados);
         });
     }
 
-    /** Envia notificação privada a um utilizador específico. */
     public void notificarUsuario(String nome, String mensagem) {
         SseClient client = sseClientes.get(nome);
         if (client != null) client.sendEvent("notificacao", mensagem);
+    }
+
+    private static String str(Map<String, Object> m, String k) {
+        Object v = m.get(k);
+        return v != null ? v.toString().trim() : "";
     }
 
     public static void main(String[] args) {

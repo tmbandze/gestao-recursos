@@ -345,8 +345,13 @@ async function abrirHistorico() {
 }
 
 async function recarregarLog() {
-  const r = await api('/api/historico');
-  document.getElementById('admin-log').textContent = r.log || '(sem registos)';
+  const btn = document.getElementById('btn-reload-log');
+  if (btn) btn.textContent = '…';
+  const r  = await api('/api/historico');
+  const el = document.getElementById('admin-log');
+  el.textContent = r.log || '(sem registos)';
+  el.scrollTop   = el.scrollHeight; // mostra as entradas mais recentes (fundo)
+  if (btn) { btn.textContent = '✓ Actualizado'; setTimeout(() => { btn.textContent = '↺ Actualizar'; }, 1500); }
 }
 
 // ── Modais ──────────────────────────────────────────────────────────────

@@ -116,6 +116,17 @@ public class Servidor {
             ctx.json(r);
         });
 
+        app.delete("/api/livros/{id}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) {
+                ctx.status(403).json(Map.of("erro", "Apenas o admin pode apagar livros")); return;
+            }
+            String id = ctx.pathParam("id");
+            var r = gestorLivros.apagar(id);
+            if (r.containsKey("ok")) logger.registar("APAGAR", nome, id);
+            ctx.json(r);
+        });
+
         app.get("/api/livros/{id}/ler", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
             String id   = ctx.pathParam("id");

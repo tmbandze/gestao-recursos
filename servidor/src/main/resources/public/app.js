@@ -195,7 +195,9 @@ function renderGrid() {
         </span>
         <div style="display:flex;gap:.35rem;align-items:center">
           ${l.temPdf ? '<span class="badge b-pdf">PDF</span>' : ''}
-          <span class="badge b-muted">${esc(l.categoria)}</span>
+          <span class="badge b-muted cat-badge"
+                onclick="event.stopPropagation();filtrarCategoria('${esc(l.categoria)}')"
+                title="Filtrar por esta categoria">${esc(l.categoria)}</span>
         </div>
       </div>
     </article>`).join('');
@@ -272,7 +274,27 @@ async function abrirDetalhes(id) {
     }
   }
 
+  if (isAdmin) {
+    const sep = document.createElement('div');
+    sep.style.cssText = 'width:100%;height:1.5px;background:var(--border);margin:.25rem 0';
+    acts.appendChild(sep);
+    acts.appendChild(mkBtn('🗑 Apagar livro', 'btn-danger', () => apagarLivro(id, d.titulo)));
+  }
+
   openOv('ov-det');
+}
+
+async function apagarLivro(id, titulo) {
+  if (!confirm(`Apagar "${titulo}"?\nEsta acção não pode ser revertida.`)) return;
+  closeOv('ov-det');
+  const r = await api(`/api/livros/${id}`, 'DELETE');
+  r.erro ? toast(r.erro, 'err') : toast('Livro apagado com sucesso', 'ok');
+  carregarLivros();
+}
+
+function filtrarCategoria(cat) {
+  document.getElementById('search-input').value = cat;
+  pesquisar();
 }
 
 async function acaoLivro(id, acao) {

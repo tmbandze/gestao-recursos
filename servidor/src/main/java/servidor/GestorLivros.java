@@ -87,6 +87,18 @@ public class GestorLivros {
         return f.exists() ? f : null;
     }
 
+    public synchronized Map<String, Object> apagar(String id) {
+        Livro livro = buscar(id);
+        if (livro == null) return Map.of("erro", "Livro não encontrado");
+        if (!livro.isDisponivel())
+            return Map.of("erro", "Não é possível apagar um livro que está requisitado");
+        livros.remove(livro);
+        File pdf = new File(PDF_DIR, id + ".pdf");
+        if (pdf.exists()) pdf.delete();
+        baseDados.guardar(livros);
+        return Map.of("ok", true, "mensagem", "Livro apagado");
+    }
+
     public synchronized Map<String, Object> requisitar(String id, String nome) {
         Livro livro = buscar(id);
         if (livro == null) return Map.of("erro", "Livro não encontrado");

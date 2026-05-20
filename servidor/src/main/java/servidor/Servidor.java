@@ -61,6 +61,7 @@ public class Servidor {
             String nome = (String) r.get("nome");
             sessoes.put(sid, nome);
             logger.registar("REGISTAR", nome, email);
+            notificarTodos("utilizadores_update", "login", "");
             ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
                             "isAdmin", nome.equalsIgnoreCase("admin")));
         });
@@ -78,13 +79,18 @@ public class Servidor {
             String nome = (String) r.get("nome");
             sessoes.put(sid, nome);
             logger.registar("LOGIN", nome, email);
+            notificarTodos("utilizadores_update", "login", "");
             ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
                             "isAdmin", nome.equalsIgnoreCase("admin")));
         });
 
         app.post("/api/logout", ctx -> {
             String nome = sessoes.remove(ctx.header("X-Session-ID"));
-            if (nome != null) { sseClientes.remove(nome); logger.registar("LOGOUT", nome, "-"); }
+            if (nome != null) {
+                sseClientes.remove(nome);
+                logger.registar("LOGOUT", nome, "-");
+                notificarTodos("utilizadores_update", "logout", "");
+            }
             ctx.json(Map.of("ok", true));
         });
 

@@ -127,6 +127,8 @@ function ligarSSE() {
   sse.addEventListener('atualizacao', () => {
     carregarLivros();
     toast('Lista de livros actualizada', 'inf');
+  });
+  sse.addEventListener('utilizadores_update', () => {
     if (isAdmin) carregarUtilizadores();
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));

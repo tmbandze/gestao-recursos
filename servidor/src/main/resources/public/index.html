@@ -677,6 +677,35 @@ main {
 
 /* ─── PDF BADGE & LOCKED ─────────────────────────────────────────── */
 .b-pdf { background: var(--navy-bg); color: var(--navy); border-color: var(--navy-br); }
+.b-red { background: var(--red-bg);  color: var(--red);  border-color: #e9b0b0; }
+
+/* ─── PRAZO (deadline) ───────────────────────────────────────────── */
+.book-prazo { margin: .3rem 0 .55rem; }
+
+/* ─── HISTÓRICO PESSOAL ──────────────────────────────────────────── */
+.hist-sec-title {
+  font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .09em;
+  color: var(--ink-d); margin-bottom: .6rem;
+}
+
+.hist-row {
+  padding: .7rem 0;
+  border-bottom: 1.5px solid var(--border);
+}
+.hist-row:last-child { border-bottom: none; }
+
+.hist-titulo {
+  font-family: var(--fd);
+  font-size: .95rem; font-weight: 600;
+  margin-bottom: .3rem;
+}
+
+.hist-meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+
+.hist-empty {
+  font-size: .85rem; color: var(--ink-d); padding: .5rem 0;
+}
 
 .pdf-locked {
   font-size: .78rem;
@@ -846,6 +875,7 @@ main {
         <div class="user-av" id="user-av"></div>
         <span id="user-nm"></span>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="abrirMeusLivros()">Os meus livros</button>
       <button class="btn btn-ghost btn-sm" onclick="abrirHistorico()">Histórico</button>
       <button class="btn btn-ghost btn-sm" onclick="logout()">Sair</button>
     </div>
@@ -942,6 +972,19 @@ main {
     <div class="factions">
       <button class="btn btn-ghost" onclick="closeOv('ov-add')">Cancelar</button>
       <button class="btn btn-primary" onclick="adicionarLivro()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Os meus livros -->
+<div class="ov" id="ov-meus">
+  <div class="modal" style="max-width:600px">
+    <div class="mhead">
+      <h2>Os meus livros</h2>
+      <button class="mclose" onclick="closeOv('ov-meus')">✕</button>
+    </div>
+    <div id="meus-content">
+      <div class="empty"><div class="spinner"></div><p>A carregar…</p></div>
     </div>
   </div>
 </div>

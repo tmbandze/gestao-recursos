@@ -39,8 +39,10 @@ public class Livro {
         return estado == EstadoLivro.DISPONIVEL;
     }
 
-    private boolean temPdf   = false;
+    private boolean temPdf        = false;
     private String  uploadPor;
+    private String  dataRequisicao;
+    private String  prazoDevolvacao;
 
     public String getId() { return id; }
     public String getTitulo() { return titulo; }
@@ -57,4 +59,8 @@ public class Livro {
     public void setTemPdf(boolean temPdf) { this.temPdf = temPdf; }
     public String getUploadPor() { return uploadPor; }
     public void setUploadPor(String uploadPor) { this.uploadPor = uploadPor; }
+    public String getDataRequisicao() { return dataRequisicao; }
+    public void setDataRequisicao(String dataRequisicao) { this.dataRequisicao = dataRequisicao; }
+    public String getPrazoDevolvacao() { return prazoDevolvacao; }
+    public void setPrazoDevolvacao(String prazoDevolvacao) { this.prazoDevolvacao = prazoDevolvacao; }
 }

@@ -187,6 +187,8 @@ function renderGrid() {
              onclick="abrirDetalhes('${l.id}')">
       <div class="book-t">${esc(l.titulo)}</div>
       <div class="book-a">${esc(l.autor)}</div>
+      ${l.estudanteActual === nomeUser && l.prazoDevolvacao
+        ? `<div class="book-prazo">${badgePrazo(l.prazoDevolvacao)}</div>` : ''}
       <div class="book-f">
         <span class="badge ${l.estado === 'DISPONIVEL' ? 'b-green' : 'b-orange'}">
           ${l.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
@@ -233,6 +235,11 @@ async function abrirDetalhes(id) {
     <div class="drow">
       <span class="dlabel">Com</span>
       <span class="dval">${esc(d.estudanteActual || '—')}</span>
+    </div>` : ''}
+    ${d.prazoDevolvacao && d.estudanteActual === nomeUser ? `
+    <div class="drow">
+      <span class="dlabel">Prazo</span>
+      <span class="dval">${badgePrazo(d.prazoDevolvacao)}</span>
     </div>` : ''}
     <div class="drow">
       <span class="dlabel">Fila</span>
@@ -338,6 +345,51 @@ function toast(msg, tipo = 'inf') {
   setTimeout(() => el.remove(), 4000);
 }
 
+// ── Histórico Pessoal ────────────────────────────────────────────────────
+
+async function abrirMeusLivros() {
+  openOv('ov-meus');
+  document.getElementById('meus-content').innerHTML =
+    '<div class="empty"><div class="spinner"></div><p>A carregar…</p></div>';
+
+  const r = await api('/api/historico/pessoal');
+  if (r.erro) {
+    document.getElementById('meus-content').innerHTML =
+      `<p class="hist-empty">${esc(r.erro)}</p>`;
+    return;
+  }
+
+  let html = '<div class="hist-sec-title">Actualmente requisitados</div>';
+  if (!r.activos.length) {
+    html += '<div class="hist-empty">Nenhum livro requisitado de momento.</div>';
+  } else {
+    html += r.activos.map(e => `
+      <div class="hist-row">
+        <div class="hist-titulo">${esc(e.tituloLivro)}</div>
+        <div class="hist-meta">
+          <span class="badge b-muted">Desde ${formatDate(e.dataInicio)}</span>
+          ${badgePrazo(e.prazo)}
+        </div>
+      </div>`).join('');
+  }
+
+  html += '<div class="mdivider"></div><div class="hist-sec-title">Histórico de devoluções</div>';
+  if (!r.devolvidos.length) {
+    html += '<div class="hist-empty">Ainda não devolveste nenhum livro.</div>';
+  } else {
+    html += r.devolvidos.map(e => `
+      <div class="hist-row">
+        <div class="hist-titulo">${esc(e.tituloLivro)}</div>
+        <div class="hist-meta">
+          <span class="badge b-muted">${formatDate(e.dataInicio)} → ${formatDate(e.dataFim)}</span>
+          <span class="badge b-green">✓ devolvido</span>
+        </div>
+      </div>`).join('');
+  }
+
+  document.getElementById('meus-content').innerHTML = html;
+}
+
 // ── Utils ────────────────────────────────────────────────────────────────
 
 const v       = id => document.getElementById(id)?.value?.trim() ?? '';
@@ -346,6 +398,27 @@ const setText = (id, val) => { const el = document.getElementById(id); if (el) e
 function esc(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function diasRestantes(prazo) {
+  if (!prazo) return null;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  return Math.round((new Date(prazo + 'T00:00:00') - hoje) / 86_400_000);
+}
+
+function badgePrazo(prazo) {
+  const d = diasRestantes(prazo);
+  if (d === null) return '';
+  if (d < 0)   return `<span class="badge b-red">Atrasado ${Math.abs(d)} dia(s)</span>`;
+  if (d === 0) return `<span class="badge b-red">Devolve hoje!</span>`;
+  if (d <= 3)  return `<span class="badge b-orange">${d} dia(s) para devolver</span>`;
+  return `<span class="badge b-green">Prazo: ${formatDate(prazo)}</span>`;
 }
 
 function mkBtn(text, cls, fn) {

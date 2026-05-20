@@ -19,12 +19,14 @@ public class Servidor {
 
     private final GestorLivros gestorLivros;
     private final GestorUtilizadores gestorUtilizadores;
+    private final GestorHistorico gestorHistorico;
     private final Logger logger;
     private final Map<String, String> sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
 
     public Servidor() {
-        gestorLivros       = new GestorLivros(new BaseDados(), this);
+        gestorHistorico    = new GestorHistorico();
+        gestorLivros       = new GestorLivros(new BaseDados(), gestorHistorico, this);
         gestorUtilizadores = new GestorUtilizadores(new BaseDadosUtilizadores());
         logger             = new Logger();
     }
@@ -155,6 +157,14 @@ public class Servidor {
 
         app.get("/api/historico", ctx ->
             ctx.json(Map.of("log", logger.lerUltimas(50))));
+
+        app.get("/api/historico/pessoal", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            var todos      = gestorHistorico.porEstudante(nome);
+            var activos    = todos.stream().filter(e -> e.getDataFim() == null).collect(java.util.stream.Collectors.toList());
+            var devolvidos = todos.stream().filter(e -> e.getDataFim() != null).collect(java.util.stream.Collectors.toList());
+            ctx.json(Map.of("activos", activos, "devolvidos", devolvidos));
+        });
 
         app.get("/api/usuarios", ctx ->
             ctx.json(Map.of("usuarios", new ArrayList<>(sessoes.values()))));

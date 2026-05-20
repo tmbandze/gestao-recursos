@@ -7,21 +7,25 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class GestorLivros {
-    private static final String PDF_DIR = "data/pdfs";
+    private static final String PDF_DIR   = "data/pdfs";
+    private static final int    DIAS_PRAZO = 7;
 
-    private final BaseDados baseDados;
-    private final Servidor servidor;
+    private final BaseDados       baseDados;
+    private final GestorHistorico gestorHistorico;
+    private final Servidor        servidor;
     private List<Livro> livros;
     private final Map<String, Queue<String>> filasEspera = new HashMap<>();
 
-    public GestorLivros(BaseDados baseDados, Servidor servidor) {
-        this.baseDados = baseDados;
-        this.servidor  = servidor;
-        this.livros    = baseDados.carregar();
+    public GestorLivros(BaseDados baseDados, GestorHistorico gestorHistorico, Servidor servidor) {
+        this.baseDados       = baseDados;
+        this.gestorHistorico = gestorHistorico;
+        this.servidor        = servidor;
+        this.livros          = baseDados.carregar();
         new File(PDF_DIR).mkdirs();
     }
 
@@ -51,6 +55,7 @@ public class GestorLivros {
         m.put("estudanteActual",  l.getEstudanteActual());
         m.put("filaEspera",       l.getFilaEspera());
         m.put("temPdf",           l.isTemPdf());
+        m.put("prazoDevolvacao",  l.getPrazoDevolvacao());
         return m;
     }
 
@@ -89,11 +94,16 @@ public class GestorLivros {
             return Map.of("erro", "Já tens este livro requisitado");
 
         if (livro.isDisponivel()) {
+            String hoje = LocalDate.now().toString();
+            String prazo = LocalDate.now().plusDays(DIAS_PRAZO).toString();
             livro.setEstado(EstadoLivro.REQUISITADO);
             livro.setEstudanteActual(nome);
+            livro.setDataRequisicao(hoje);
+            livro.setPrazoDevolvacao(prazo);
+            gestorHistorico.registarInicio(id, livro.getTitulo(), nome, hoje, prazo);
             baseDados.guardar(livros);
             servidor.notificarTodos("atualizacao", "requisitado", nome);
-            return Map.of("ok", true, "mensagem", "Livro requisitado com sucesso");
+            return Map.of("ok", true, "mensagem", "Livro requisitado! Prazo de devolução: " + formatarData(prazo));
         } else {
             Queue<String> fila = filasEspera.computeIfAbsent(id, k -> new LinkedList<>());
             if (fila.contains(nome)) return Map.of("erro", "Já estás na fila de espera deste livro");
@@ -110,15 +120,25 @@ public class GestorLivros {
         if (!nome.equals(livro.getEstudanteActual()))
             return Map.of("erro", "Não tens este livro requisitado");
 
+        gestorHistorico.registarFim(id, nome, LocalDate.now().toString());
+
         Queue<String> fila = filasEspera.get(id);
         if (fila != null && !fila.isEmpty()) {
             String proximo = fila.poll();
+            String hoje = LocalDate.now().toString();
+            String prazo = LocalDate.now().plusDays(DIAS_PRAZO).toString();
             livro.setEstudanteActual(proximo);
+            livro.setDataRequisicao(hoje);
+            livro.setPrazoDevolvacao(prazo);
             if (!livro.getFilaEspera().isEmpty()) livro.getFilaEspera().remove(0);
-            servidor.notificarUsuario(proximo, "O livro '" + livro.getTitulo() + "' foi reservado para si!");
+            gestorHistorico.registarInicio(id, livro.getTitulo(), proximo, hoje, prazo);
+            servidor.notificarUsuario(proximo,
+                "O livro '" + livro.getTitulo() + "' está disponível para si! Prazo: " + formatarData(prazo));
         } else {
             livro.setEstado(EstadoLivro.DISPONIVEL);
             livro.setEstudanteActual(null);
+            livro.setDataRequisicao(null);
+            livro.setPrazoDevolvacao(null);
         }
         baseDados.guardar(livros);
         servidor.notificarTodos("atualizacao", "devolvido", nome);
@@ -154,5 +174,14 @@ public class GestorLivros {
 
     private Livro buscar(String id) {
         return livros.stream().filter(l -> l.getId().equals(id)).findFirst().orElse(null);
+    }
+
+    private static String formatarData(String iso) {
+        try {
+            LocalDate d = LocalDate.parse(iso);
+            return d.getDayOfMonth() + "/" + d.getMonthValue() + "/" + d.getYear();
+        } catch (Exception e) {
+            return iso;
+        }
     }
 }

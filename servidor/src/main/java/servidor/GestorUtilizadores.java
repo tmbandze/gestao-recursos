@@ -37,6 +37,10 @@ public class GestorUtilizadores {
         return Map.of("ok", true, "nome", u.getNome(), "email", u.getEmail());
     }
 
+    public synchronized List<String> listarNomes() {
+        return utilizadores.stream().map(Utilizador::getNome).collect(java.util.stream.Collectors.toList());
+    }
+
     public synchronized Map<String, Object> login(String email, String password) {
         if (email == null || password == null) return Map.of("erro", "Credenciais inválidas");
         String emailNorm = email.trim().toLowerCase();

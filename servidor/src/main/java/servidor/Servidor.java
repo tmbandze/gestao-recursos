@@ -180,6 +180,19 @@ public class Servidor {
         app.get("/api/usuarios", ctx ->
             ctx.json(Map.of("usuarios", new ArrayList<>(sessoes.values()))));
 
+        app.get("/api/admin/utilizadores", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            var conectados = new java.util.HashSet<>(sessoes.values());
+            var lista = gestorUtilizadores.listarNomes().stream().map(n -> {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("nome", n);
+                m.put("conectado", conectados.contains(n));
+                return m;
+            }).collect(java.util.stream.Collectors.toList());
+            ctx.json(Map.of("utilizadores", lista));
+        });
+
         app.get("/api/admin/sistema", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
             if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }

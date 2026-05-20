@@ -85,7 +85,7 @@ function mostrarMain() {
 
   // Admin panel: visibilidade controlada apenas pela flag do servidor
   document.getElementById('admin-box').style.display = isAdmin ? 'block' : 'none';
-  if (isAdmin) recarregarLog();
+  if (isAdmin) { recarregarLog(); carregarUtilizadores(); }
 
   carregarLivros();
   ligarSSE();
@@ -127,6 +127,7 @@ function ligarSSE() {
   sse.addEventListener('atualizacao', () => {
     carregarLivros();
     toast('Lista de livros actualizada', 'inf');
+    if (isAdmin) carregarUtilizadores();
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));
   sse.onerror = () => {};
@@ -342,6 +343,20 @@ async function abrirHistorico() {
   openOv('ov-hist');
   const r = await api('/api/historico');
   document.getElementById('hist-log').textContent = r.log || '(sem registos)';
+}
+
+async function carregarUtilizadores() {
+  const btn = document.getElementById('btn-reload-users');
+  if (btn) btn.textContent = '…';
+  const r = await api('/api/admin/utilizadores');
+  const box = document.getElementById('admin-users');
+  if (!box || !Array.isArray(r.utilizadores)) return;
+  box.innerHTML = r.utilizadores.map(u => `
+    <div class="user-pill">
+      <div class="user-dot ${u.conectado ? 'on' : 'off'}"></div>
+      ${esc(u.nome)}
+    </div>`).join('');
+  if (btn) btn.textContent = '↺';
 }
 
 async function recarregarLog() {

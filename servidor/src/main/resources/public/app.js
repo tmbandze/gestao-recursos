@@ -6,6 +6,14 @@ let livros    = [];
 let filtro    = 'todos';
 let pesquisa  = '';
 let sse       = null;
+let pdfDoc    = null;
+let pdfPage   = 1;
+
+// PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
 
 // ── Auth tabs ───────────────────────────────────────────────────────────
 
@@ -100,6 +108,17 @@ async function api(path, method = 'GET', body = null) {
   }
 }
 
+async function apiForm(path, formData) {
+  const h = {};
+  if (sessionId) h['X-Session-ID'] = sessionId;
+  try {
+    const res = await fetch(path, { method: 'POST', headers: h, body: formData });
+    return await res.json();
+  } catch {
+    return { erro: 'Erro de ligação ao servidor' };
+  }
+}
+
 // ── SSE ─────────────────────────────────────────────────────────────────
 
 function ligarSSE() {
@@ -172,7 +191,10 @@ function renderGrid() {
         <span class="badge ${l.estado === 'DISPONIVEL' ? 'b-green' : 'b-orange'}">
           ${l.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
         </span>
-        <span class="badge b-muted">${esc(l.categoria)}</span>
+        <div style="display:flex;gap:.35rem;align-items:center">
+          ${l.temPdf ? '<span class="badge b-pdf">PDF</span>' : ''}
+          <span class="badge b-muted">${esc(l.categoria)}</span>
+        </div>
       </div>
     </article>`).join('');
 }
@@ -221,11 +243,26 @@ async function abrirDetalhes(id) {
   acts.innerHTML = '';
 
   if (d.estado === 'DISPONIVEL') {
-    acts.appendChild(mkBtn('📖 Requisitar', 'btn-success', () => acaoLivro(id, 'requisitar')));
+    acts.appendChild(mkBtn('Requisitar', 'btn-success', () => acaoLivro(id, 'requisitar')));
   } else if (d.estudanteActual === nomeUser) {
     acts.appendChild(mkBtn('↩ Devolver', 'btn-danger', () => acaoLivro(id, 'devolver')));
   } else {
     acts.appendChild(mkBtn('⏳ Entrar na fila de espera', 'btn-ghost', () => acaoLivro(id, 'requisitar')));
+  }
+
+  if (d.temPdf) {
+    const canRead = isAdmin || d.estudanteActual === nomeUser;
+    if (canRead) {
+      acts.appendChild(mkBtn('📖 Ler PDF', 'btn-primary', () => {
+        closeOv('ov-det');
+        abrirPdf(id, d.titulo);
+      }));
+    } else {
+      const locked = document.createElement('span');
+      locked.className = 'pdf-locked';
+      locked.textContent = '🔒 PDF disponível — requisita para ler';
+      acts.appendChild(locked);
+    }
   }
 
   openOv('ov-det');
@@ -245,16 +282,28 @@ function abrirAdd() { openOv('ov-add'); document.getElementById('add-t').focus()
 async function adicionarLivro() {
   const titulo    = v('add-t');
   const autor     = v('add-a');
-  const categoria = v('add-c') || 'Geral';
+  const categoria = document.getElementById('add-c').value || 'Geral';
+  const pdfInput  = document.getElementById('add-pdf');
   if (!titulo || !autor) { toast('Título e autor são obrigatórios', 'err'); return; }
 
-  const r = await api('/api/livros', 'POST', { titulo, autor, categoria });
+  const pdfFile = pdfInput?.files?.[0];
+  if (pdfFile && pdfFile.size > 50_000_000) {
+    toast('O ficheiro PDF não pode exceder 50 MB', 'err'); return;
+  }
+
+  const fd = new FormData();
+  fd.append('titulo',    titulo);
+  fd.append('autor',     autor);
+  fd.append('categoria', categoria);
+  if (pdfFile) fd.append('pdf', pdfFile);
+
+  const r = await apiForm('/api/livros', fd);
   closeOv('ov-add');
-  ['add-t', 'add-a', 'add-c'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  r.erro ? toast(r.erro, 'err') : toast('Livro adicionado com sucesso!', 'ok');
+  document.getElementById('add-t').value = '';
+  document.getElementById('add-a').value = '';
+  document.getElementById('add-c').value = 'Geral';
+  if (pdfInput) pdfInput.value = '';
+  r.erro ? toast(r.erro, 'err') : toast('Livro adicionado' + (pdfFile ? ' com PDF' : '') + ' com sucesso!', 'ok');
   carregarLivros();
 }
 
@@ -309,6 +358,63 @@ function mkBtn(text, cls, fn) {
 
 document.getElementById('si-pw').addEventListener('keydown',  e => { if (e.key === 'Enter') signIn(); });
 document.getElementById('su-pw2').addEventListener('keydown', e => { if (e.key === 'Enter') signUp(); });
+
+// ── PDF Viewer ───────────────────────────────────────────────────────────
+
+async function abrirPdf(id, titulo) {
+  document.getElementById('pdf-titulo').textContent = titulo;
+  document.getElementById('pdf-canvas').style.display = 'none';
+  document.getElementById('pdf-loading').style.display = 'flex';
+  document.getElementById('pdf-info').textContent = '—';
+  pdfDoc = null; pdfPage = 1;
+  openOv('ov-pdf');
+
+  try {
+    const res = await fetch(`/api/livros/${id}/ler`, { headers: { 'X-Session-ID': sessionId } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      closeOv('ov-pdf');
+      toast(err.erro || 'Não foi possível carregar o PDF', 'err');
+      return;
+    }
+    const data = await res.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+    await renderPdfPage(1);
+    document.getElementById('pdf-loading').style.display = 'none';
+    document.getElementById('pdf-canvas').style.display = 'block';
+  } catch {
+    closeOv('ov-pdf');
+    toast('Erro ao carregar o PDF', 'err');
+  }
+}
+
+async function renderPdfPage(num) {
+  if (!pdfDoc) return;
+  const page   = await pdfDoc.getPage(num);
+  const canvas = document.getElementById('pdf-canvas');
+  const vp     = page.getViewport({ scale: 1.5 });
+  canvas.width  = vp.width;
+  canvas.height = vp.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  document.getElementById('pdf-info').textContent = `Página ${num} de ${pdfDoc.numPages}`;
+}
+
+async function pdfPrevPage() {
+  if (!pdfDoc || pdfPage <= 1) return;
+  await renderPdfPage(--pdfPage);
+}
+
+async function pdfNextPage() {
+  if (!pdfDoc || pdfPage >= pdfDoc.numPages) return;
+  await renderPdfPage(++pdfPage);
+}
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('ov-pdf').classList.contains('open')) return;
+  if (e.key === 'Escape')                              closeOv('ov-pdf');
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') pdfNextPage();
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   pdfPrevPage();
+});
 
 // ── Restaurar sessão (isAdmin lido do localStorage, não derivado do nome) ──
 

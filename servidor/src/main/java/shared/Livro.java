@@ -39,6 +39,9 @@ public class Livro {
         return estado == EstadoLivro.DISPONIVEL;
     }
 
+    private boolean temPdf   = false;
+    private String  uploadPor;
+
     public String getId() { return id; }
     public String getTitulo() { return titulo; }
     public String getAutor() { return autor; }
@@ -50,4 +53,8 @@ public class Livro {
     public List<String> getFilaEspera() { return filaEspera != null ? filaEspera : new ArrayList<>(); }
     public void setFilaEspera(List<String> filaEspera) { this.filaEspera = filaEspera; }
     public String getDataInsercao() { return dataInsercao; }
+    public boolean isTemPdf() { return temPdf; }
+    public void setTemPdf(boolean temPdf) { this.temPdf = temPdf; }
+    public String getUploadPor() { return uploadPor; }
+    public void setUploadPor(String uploadPor) { this.uploadPor = uploadPor; }
 }

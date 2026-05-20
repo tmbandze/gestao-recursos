@@ -641,6 +641,133 @@ main {
   overflow-y: auto; white-space: pre; line-height: 1.75;
 }
 
+/* ─── FORM SELECT / FILE ─────────────────────────────────────────── */
+.field-select {
+  width: 100%;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rs);
+  color: var(--ink);
+  font-family: var(--fb);
+  font-size: .9rem;
+  padding: .6rem .875rem;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+  transition: border-color .15s;
+}
+.field-select:focus { border-color: var(--green); }
+
+.field input[type="file"] {
+  padding: .48rem .875rem;
+  cursor: pointer;
+}
+.file-hint {
+  font-size: .7rem;
+  color: var(--ink-d);
+  margin-top: .25rem;
+}
+.field-opt {
+  font-size: .65rem;
+  color: var(--ink-d);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ─── PDF BADGE & LOCKED ─────────────────────────────────────────── */
+.b-pdf { background: var(--navy-bg); color: var(--navy); border-color: var(--navy-br); }
+
+.pdf-locked {
+  font-size: .78rem;
+  color: var(--ink-m);
+  padding: .45rem .8rem;
+  background: var(--bg);
+  border: 1.5px dashed var(--border-d);
+  border-radius: var(--rs);
+  display: inline-block;
+}
+
+/* ─── PDF VIEWER ─────────────────────────────────────────────────── */
+.ov-pdf {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(25,23,20,.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 200;
+  align-items: stretch;
+  justify-content: center;
+}
+.ov-pdf.open { display: flex; }
+
+.pdf-shell {
+  background: var(--paper);
+  border-left:  1.5px solid var(--border);
+  border-right: 1.5px solid var(--border);
+  width: 100%; max-width: 880px;
+  display: flex; flex-direction: column;
+}
+
+.pdf-hd {
+  background: var(--paper);
+  border-bottom: 1.5px solid var(--border);
+  padding: .875rem 1.5rem;
+  display: flex; align-items: center; gap: 1rem;
+  flex-shrink: 0;
+}
+
+.pdf-hd-title {
+  font-family: var(--fd);
+  font-size: 1.05rem; font-weight: 600;
+  flex: 1; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+
+.pdf-nav-bar {
+  background: var(--bg);
+  border-bottom: 1.5px solid var(--border);
+  padding: .5rem 1.25rem;
+  display: flex; align-items: center; gap: .75rem;
+  flex-shrink: 0;
+}
+
+.pdf-pg-info {
+  font-family: var(--fm);
+  font-size: .78rem;
+  color: var(--ink-m);
+  flex: 1; text-align: center;
+}
+
+.pdf-body {
+  flex: 1;
+  overflow: auto;
+  background: #5a5854;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem;
+}
+
+#pdf-canvas {
+  box-shadow: 0 6px 28px rgba(0,0,0,.45);
+  display: block;
+  max-width: 100%;
+}
+
+.pdf-load-msg {
+  color: #e8e5de;
+  font-size: .875rem;
+  display: flex; align-items: center; gap: .75rem;
+  align-self: center; width: 100%;
+  justify-content: center;
+}
+
+.pdf-load-msg .spinner {
+  border-color: rgba(255,255,255,.2);
+  border-top-color: #fff;
+}
+
 /* ─── RESPONSIVE ─────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   main { padding: 1rem; }
@@ -787,8 +914,31 @@ main {
       <input type="text" id="add-t" placeholder="Título do livro"></div>
     <div class="field"><label>Autor *</label>
       <input type="text" id="add-a" placeholder="Nome do autor"></div>
-    <div class="field"><label>Categoria</label>
-      <input type="text" id="add-c" placeholder="Ex: Informática, Matemática…"></div>
+    <div class="field">
+      <label>Categoria</label>
+      <select id="add-c" class="field-select">
+        <option value="Geral">Geral</option>
+        <option value="Informática">Informática</option>
+        <option value="Programação">Programação</option>
+        <option value="Redes">Redes</option>
+        <option value="Matemática">Matemática</option>
+        <option value="Física">Física</option>
+        <option value="Química">Química</option>
+        <option value="Biologia">Biologia</option>
+        <option value="Engenharia">Engenharia</option>
+        <option value="Literatura">Literatura</option>
+        <option value="História">História</option>
+        <option value="Economia">Economia</option>
+        <option value="Direito">Direito</option>
+        <option value="Medicina">Medicina</option>
+        <option value="Outros">Outros</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Ficheiro PDF <span class="field-opt">(opcional)</span></label>
+      <input type="file" id="add-pdf" accept=".pdf">
+      <div class="file-hint">Máximo 50 MB · apenas .pdf</div>
+    </div>
     <div class="factions">
       <button class="btn btn-ghost" onclick="closeOv('ov-add')">Cancelar</button>
       <button class="btn btn-primary" onclick="adicionarLivro()">Adicionar</button>
@@ -807,7 +957,30 @@ main {
   </div>
 </div>
 
+<!-- Leitor PDF -->
+<div class="ov-pdf" id="ov-pdf">
+  <div class="pdf-shell">
+    <div class="pdf-hd">
+      <span class="pdf-hd-title" id="pdf-titulo">—</span>
+      <button class="mclose" onclick="closeOv('ov-pdf')">✕</button>
+    </div>
+    <div class="pdf-nav-bar">
+      <button class="btn btn-ghost btn-sm" onclick="pdfPrevPage()">‹ Anterior</button>
+      <span class="pdf-pg-info" id="pdf-info">—</span>
+      <button class="btn btn-ghost btn-sm" onclick="pdfNextPage()">Próxima ›</button>
+    </div>
+    <div class="pdf-body" id="pdf-body">
+      <div class="pdf-load-msg" id="pdf-loading">
+        <div class="spinner"></div>
+        A carregar PDF…
+      </div>
+      <canvas id="pdf-canvas" style="display:none"></canvas>
+    </div>
+  </div>
+</div>
+
 <div id="toasts"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

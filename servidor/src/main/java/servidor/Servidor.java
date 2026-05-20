@@ -4,7 +4,11 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.sse.SseClient;
 import io.javalin.http.staticfiles.Location;
+import jakarta.servlet.MultipartConfigElement;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +37,11 @@ public class Servidor {
                 sf.location   = Location.CLASSPATH;
             });
             config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()));
+            // Multipart: 50 MB max para uploads de PDF
+            config.jetty.modifyServletContextHandler(h -> h.setAttribute(
+                "org.eclipse.jetty.multipartConfig",
+                new MultipartConfigElement(System.getProperty("java.io.tmpdir"),
+                    50_000_000L, 50_000_000L, 1_000_000)));
         });
 
         // ── Autenticação ──────────────────────────────────────────────
@@ -91,11 +100,37 @@ public class Servidor {
 
         app.post("/api/livros", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> b = ctx.bodyAsClass(Map.class);
-            var r = gestorLivros.inserir(str(b,"titulo"), str(b,"autor"), str(b,"categoria"), nome);
-            if (r.containsKey("ok")) logger.registar("INSERIR", nome, str(b,"titulo"));
+            String titulo    = ctx.formParam("titulo");
+            String autor     = ctx.formParam("autor");
+            String categoria = ctx.formParam("categoria");
+            InputStream pdfStream = null;
+            var uploaded = ctx.uploadedFile("pdf");
+            if (uploaded != null && uploaded.size() > 0) pdfStream = uploaded.content();
+            String t = titulo    != null ? titulo.trim()    : "";
+            String a = autor     != null ? autor.trim()     : "";
+            String c = categoria != null ? categoria.trim() : "Geral";
+            var r = gestorLivros.inserir(t, a, c, nome, pdfStream);
+            if (r.containsKey("ok")) logger.registar("INSERIR", nome, t);
             ctx.json(r);
+        });
+
+        app.get("/api/livros/{id}/ler", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            String id   = ctx.pathParam("id");
+            var det = gestorLivros.detalhes(id);
+            if (det.containsKey("erro")) { ctx.status(404).json(det); return; }
+            if (!Boolean.TRUE.equals(det.get("temPdf"))) {
+                ctx.status(404).json(Map.of("erro", "Este livro não tem PDF")); return;
+            }
+            String estudante = (String) det.get("estudanteActual");
+            if (!nome.equalsIgnoreCase("admin") && !nome.equals(estudante)) {
+                ctx.status(403).json(Map.of("erro", "Requisita o livro primeiro para poder ler o PDF")); return;
+            }
+            File pdf = gestorLivros.getPdfFile(id);
+            if (pdf == null) { ctx.status(404).json(Map.of("erro", "Ficheiro PDF não encontrado")); return; }
+            ctx.contentType("application/pdf");
+            ctx.header("Content-Disposition", "inline; filename=\"livro.pdf\"");
+            ctx.result(new FileInputStream(pdf));
         });
 
         app.post("/api/livros/{id}/requisitar", ctx -> {

@@ -114,7 +114,13 @@
                 <TextArea fx:id="painelDetalhes" visible="false" managed="false"/>
             </VBox>
 
-            <Label text="N O T I F I C A Ç Õ E S" styleClass="section-title"/>
+            <HBox alignment="CENTER_LEFT" spacing="8">
+                <Label text="N O T I F I C A Ç Õ E S" styleClass="section-title" HBox.hgrow="ALWAYS"/>
+                <Button text="🗑" onAction="#limparNotificacoes"
+                        styleClass="btn-ghost"
+                        style="-fx-font-size:11; -fx-padding:2 6 2 6;"
+                        tooltip="Limpar notificações"/>
+            </HBox>
 
             <TextArea fx:id="painelNotificacoes"
                       VBox.vgrow="ALWAYS"

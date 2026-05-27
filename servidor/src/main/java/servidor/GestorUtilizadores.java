@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,7 +52,116 @@ public class GestorUtilizadores {
         if (u == null || !sha256(u.getSalt() + password).equals(u.getPasswordHash()))
             return Map.of("erro", "Email ou password incorrectos");
 
+        if (u.isBloqueado())
+            return Map.of("erro", "Conta bloqueada pelo administrador. Contacte o suporte.");
+
         return Map.of("ok", true, "nome", u.getNome(), "email", u.getEmail());
+    }
+
+    // ── Recuperação de password ───────────────────────────────────────────
+
+    /**
+     * Gera um token de recuperação de 8 caracteres e regista-o no utilizador.
+     * O token é exibido na consola do servidor (sem SMTP configurado).
+     */
+    public synchronized Map<String, Object> pedirRecuperacao(String email) {
+        if (email == null || email.isBlank()) return Map.of("erro", "Email inválido");
+        String emailNorm = email.trim().toLowerCase();
+        Utilizador u = utilizadores.stream()
+                .filter(x -> x.getEmail().equalsIgnoreCase(emailNorm))
+                .findFirst().orElse(null);
+
+        if (u == null) {
+            // Resposta genérica para não revelar se o email existe
+            return Map.of("ok", true, "mensagem",
+                "Se o email estiver registado, receberá as instruções. Contacte o administrador.");
+        }
+
+        String token  = gerarTokenReset();
+        String expira = LocalDateTime.now().plusHours(2).toString();
+        u.setTokenReset(token);
+        u.setTokenExpira(expira);
+        baseDados.guardar(utilizadores);
+
+        // Sem SMTP: mostrar na consola do servidor para o admin comunicar ao utilizador
+        System.out.printf("%n╔══════════════════════════════════════════════════════════╗%n");
+        System.out.printf("║  RECUPERAÇÃO DE PASSWORD                                 ║%n");
+        System.out.printf("║  Utilizador : %-42s  ║%n", u.getNome());
+        System.out.printf("║  Email      : %-42s  ║%n", u.getEmail());
+        System.out.printf("║  Token      : %-42s  ║%n", token);
+        System.out.printf("║  Válido até : %-42s  ║%n", expira);
+        System.out.printf("╚══════════════════════════════════════════════════════════╝%n%n");
+
+        return Map.of("ok", true, "mensagem",
+            "Código de recuperação gerado. Contacte o administrador para obter o código "
+            + "ou verifique a consola do servidor. Válido por 2 horas.");
+    }
+
+    /**
+     * Valida o token e redefine a password do utilizador.
+     */
+    public synchronized Map<String, Object> resetarPassword(String token, String novaPassword) {
+        if (token == null || token.isBlank())            return Map.of("erro", "Token inválido");
+        if (novaPassword == null || novaPassword.length() < 6)
+            return Map.of("erro", "Nova password: mínimo 6 caracteres");
+
+        Utilizador u = utilizadores.stream()
+                .filter(x -> token.equals(x.getTokenReset()))
+                .findFirst().orElse(null);
+
+        if (u == null) return Map.of("erro", "Token de recuperação inválido ou já utilizado");
+
+        // Verificar expiração
+        try {
+            LocalDateTime expira = LocalDateTime.parse(u.getTokenExpira());
+            if (LocalDateTime.now().isAfter(expira))
+                return Map.of("erro", "Token expirado. Solicite um novo código.");
+        } catch (Exception e) {
+            return Map.of("erro", "Token corrompido. Solicite um novo código.");
+        }
+
+        // Actualizar password
+        String novoSalt = gerarSalt();
+        u.setSalt(novoSalt);
+        u.setPasswordHash(sha256(novoSalt + novaPassword));
+        u.setTokenReset(null);
+        u.setTokenExpira(null);
+        baseDados.guardar(utilizadores);
+
+        System.out.printf("[INFO] Password redefinida para o utilizador: %s%n", u.getNome());
+        return Map.of("ok", true, "mensagem", "Password redefinida com sucesso! Já pode entrar.");
+    }
+
+    // ── Moderação ─────────────────────────────────────────────────────────
+
+    public synchronized void bloquearUtilizador(String nome) {
+        utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome)).findFirst()
+            .ifPresent(u -> { u.setBloqueado(true); baseDados.guardar(utilizadores); });
+    }
+
+    public synchronized void desbloquearUtilizador(String nome) {
+        utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome)).findFirst()
+            .ifPresent(u -> { u.setBloqueado(false); baseDados.guardar(utilizadores); });
+    }
+
+    /** Adiciona um aviso ao utilizador e devolve o total de avisos. */
+    public synchronized int adicionarAviso(String nome) {
+        return utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome)).findFirst()
+            .map(u -> {
+                u.setAvisos(u.getAvisos() + 1);
+                baseDados.guardar(utilizadores);
+                return u.getAvisos();
+            }).orElse(0);
+    }
+
+    public synchronized int     getAvisos(String nome) {
+        return utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome))
+            .findFirst().map(Utilizador::getAvisos).orElse(0);
+    }
+
+    public synchronized boolean estaBloqueado(String nome) {
+        return utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome))
+            .findFirst().map(Utilizador::isBloqueado).orElse(false);
     }
 
     // Cria conta admin automática na primeira execução se não existir
@@ -62,6 +172,15 @@ public class GestorUtilizadores {
         utilizadores.add(new Utilizador(UUID.randomUUID().toString(), "admin", "admin@biblioteca.local", salt, sha256(salt + "admin123")));
         baseDados.guardar(utilizadores);
         System.out.println("[INFO] Conta admin criada — email: admin@biblioteca.local  password: admin123");
+    }
+
+    private static String gerarTokenReset() {
+        // Token alfanumérico maiúsculo de 8 caracteres
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sem I, O, 0, 1 para evitar confusão
+        StringBuilder sb = new StringBuilder(8);
+        SecureRandom rng = new SecureRandom();
+        for (int i = 0; i < 8; i++) sb.append(chars.charAt(rng.nextInt(chars.length())));
+        return sb.toString();
     }
 
     private static String gerarSalt() {

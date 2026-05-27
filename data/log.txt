@@ -1,0 +1,16 @@
+[2026-05-19 11:15:35] LOGIN        | Tomas           | -
+[2026-05-19 11:18:43] LOGIN        | Tomas           | -
+[2026-05-19 11:18:57] INSERIR      | Tomas           | Sistemas Distribuidos
+[2026-05-19 11:19:03] REQUISITAR   | Tomas           | 167c5cd1-0aa8-4347-b79e-6d67b9bdcf53
+[2026-05-19 11:19:03] DEVOLVER     | Tomas           | 167c5cd1-0aa8-4347-b79e-6d67b9bdcf53
+[2026-05-19 11:21:13] LOGIN        | admin           | -
+[2026-05-19 11:22:37] LOGOUT       | admin           | -
+[2026-05-19 11:27:59] LOGIN        | admin           | -
+[2026-05-19 11:40:40] REGISTAR     | Tomas Bandze    | tomas@uni.ac.mz
+[2026-05-19 11:40:55] LOGIN        | Tomas Bandze    | tomas@uni.ac.mz
+[2026-05-19 11:40:55] LOGIN        | admin           | admin@biblioteca.local
+[2026-05-19 11:43:31] LOGIN        | admin           | admin@biblioteca.local
+[2026-05-19 11:44:00] LOGOUT       | admin           | -
+[2026-05-19 11:44:28] REGISTAR     | Tomas Mathe     | tmbandze@gmail.com
+[2026-05-19 11:55:27] LOGIN        | admin           | admin@biblioteca.local
+[2026-05-19 11:55:27] LOGIN        | Tomas Bandze    | tomas@uni.ac.mz

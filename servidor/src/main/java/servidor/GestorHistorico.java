@@ -44,6 +44,13 @@ public class GestorHistorico {
             .collect(Collectors.toList());
     }
 
+    /** Devolve todos os empréstimos ainda activos (não devolvidos). Usado pelo MonitorPrazos. */
+    public synchronized List<Emprestimo> emprestimosActivos() {
+        return emprestimos.stream()
+            .filter(e -> e.getDataFim() == null)
+            .collect(Collectors.toList());
+    }
+
     private List<Emprestimo> carregar() {
         File f = new File(FICHEIRO);
         if (!f.exists()) return new ArrayList<>();

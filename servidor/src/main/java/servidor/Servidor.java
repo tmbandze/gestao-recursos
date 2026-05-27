@@ -17,11 +17,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Servidor {
     private static final int PORTA = 8080;
 
-    private final GestorLivros gestorLivros;
+    private final GestorLivros       gestorLivros;
     private final GestorUtilizadores gestorUtilizadores;
-    private final GestorHistorico gestorHistorico;
-    private final Logger logger;
-    private final Map<String, String> sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
+    private final GestorHistorico    gestorHistorico;
+    private final Logger             logger;
+    private final GestorTCP          gestorTCP;
+    private final MonitorPrazos      monitorPrazos;
+    private final Map<String, String>    sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
 
     public Servidor() {
@@ -29,6 +31,10 @@ public class Servidor {
         gestorLivros       = new GestorLivros(new BaseDados(), gestorHistorico, this);
         gestorUtilizadores = new GestorUtilizadores(new BaseDadosUtilizadores());
         logger             = new Logger();
+        gestorTCP          = new GestorTCP(gestorLivros, gestorUtilizadores, gestorHistorico, logger);
+        monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger);
+        // Injectar gestorTCP no gestor de livros (necessário para notificações de conteúdo suspeito)
+        gestorLivros.setGestorTCP(gestorTCP);
     }
 
     public void iniciar() {
@@ -215,9 +221,72 @@ public class Servidor {
             client.onClose(() -> sseClientes.remove(nome));
         });
 
+        // ── Recuperação de password (HTTP) ────────────────────────────
+        app.post("/api/recuperar-password", ctx -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String email = str(b, "email");
+            var r = gestorUtilizadores.pedirRecuperacao(email);
+            if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
+            ctx.json(r);
+        });
+
+        app.post("/api/reset-password", ctx -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String token    = str(b, "token");
+            String novaPwd  = str(b, "novaPassword");
+            var r = gestorUtilizadores.resetarPassword(token, novaPwd);
+            if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
+            ctx.json(r);
+        });
+
+        // ── Admin: livros suspeitos ────────────────────────────────────
+        app.get("/api/admin/suspeitos", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            ctx.json(Map.of("livros", gestorLivros.listarSuspeitos()));
+        });
+
+        app.post("/api/admin/avisar/{nome}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String dest = ctx.pathParam("nome");
+            int total = gestorUtilizadores.adicionarAviso(dest);
+            // Push via SSE se o utilizador estiver ligado
+            SseClient sc = sseClientes.get(dest);
+            if (sc != null) sc.sendEvent("notificacao", "⚠ Aviso administrativo da biblioteca (total: " + total + ")");
+            logger.registar("AVISO", nome, "→ " + dest);
+            ctx.json(Map.of("ok", true, "avisos", total));
+        });
+
+        app.post("/api/admin/bloquear/{nome}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String dest = ctx.pathParam("nome");
+            gestorUtilizadores.bloquearUtilizador(dest);
+            SseClient sc = sseClientes.get(dest);
+            if (sc != null) sc.sendEvent("notificacao", "🚫 A sua conta foi bloqueada pelo administrador.");
+            logger.registar("BLOQUEAR", nome, "→ " + dest);
+            ctx.json(Map.of("ok", true));
+        });
+
+        app.post("/api/admin/desbloquear/{nome}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String dest = ctx.pathParam("nome");
+            gestorUtilizadores.desbloquearUtilizador(dest);
+            logger.registar("DESBLOQUEAR", nome, "→ " + dest);
+            ctx.json(Map.of("ok", true));
+        });
+
         app.start(PORTA);
         System.out.println("[INFO] Servidor web iniciado em http://0.0.0.0:" + PORTA);
         System.out.println("[INFO] Partilha com colegas: http://<SEU_IP>:" + PORTA);
+
+        // ── Serviços auxiliares ───────────────────────────────────────
+        gestorTCP.iniciar();
+        monitorPrazos.iniciar();
     }
 
     private String autenticar(Context ctx) {

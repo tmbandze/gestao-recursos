@@ -845,8 +845,9 @@ main {
     <p class="auth-sub">Biblioteca partilhada de estudantes</p>
 
     <div class="auth-tabs">
-      <button class="atab active" id="atab-si" onclick="switchTab('si')">Entrar</button>
-      <button class="atab"        id="atab-su" onclick="switchTab('su')">Criar conta</button>
+      <button class="atab active" id="atab-si"  onclick="switchTab('si')">Entrar</button>
+      <button class="atab"        id="atab-su"  onclick="switchTab('su')">Criar conta</button>
+      <button class="atab"        id="atab-rec" onclick="switchTab('rec')" style="display:none">Recuperar</button>
     </div>
 
     <div class="aform active" id="aform-si">
@@ -859,6 +860,42 @@ main {
         <input type="password" id="si-pw" placeholder="••••••••" autocomplete="current-password">
       </div>
       <button class="btn btn-primary btn-full" onclick="signIn()">Entrar na biblioteca</button>
+      <div style="text-align:center;margin-top:.75rem">
+        <button class="btn btn-ghost btn-sm" onclick="switchTab('rec')"
+                style="font-size:.8rem;color:var(--ink-m);">Esqueci a password</button>
+      </div>
+    </div>
+
+    <!-- Formulário: Recuperar password -->
+    <div class="aform" id="aform-rec">
+      <p style="font-size:.82rem;color:var(--ink-m);margin-bottom:1rem;">
+        Introduz o teu email. O administrador fornecerá o código de recuperação.
+      </p>
+      <div class="field" id="rec-step1">
+        <label>Email da conta</label>
+        <input type="email" id="rec-email" placeholder="o.teu@email.com">
+      </div>
+      <button class="btn btn-primary btn-full" id="rec-btn1" onclick="solicitarRecuperacao()">
+        Pedir código de recuperação
+      </button>
+      <div id="rec-step2" style="display:none;margin-top:1rem">
+        <div class="field">
+          <label>Código de recuperação</label>
+          <input type="text" id="rec-token" placeholder="8 caracteres (ex: AB3KP7QZ)"
+                 style="text-transform:uppercase;letter-spacing:.15em;font-family:var(--fm)">
+        </div>
+        <div class="field">
+          <label>Nova password</label>
+          <input type="password" id="rec-nova-pw" placeholder="Mínimo 6 caracteres">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="confirmarReset()">
+          Redefinir password
+        </button>
+      </div>
+      <div style="text-align:center;margin-top:.75rem">
+        <button class="btn btn-ghost btn-sm" onclick="switchTab('si')"
+                style="font-size:.8rem;">← Voltar ao login</button>
+      </div>
     </div>
 
     <div class="aform" id="aform-su">
@@ -945,6 +982,19 @@ main {
         <button class="btn btn-ghost btn-sm" id="btn-reload-users" onclick="carregarUtilizadores()">↺</button>
       </div>
       <div class="admin-users-grid" id="admin-users"></div>
+
+      <div class="mdivider"></div>
+
+      <!-- Conteúdo suspeito -->
+      <div style="margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--red)">
+          🚨 Conteúdo Suspeito
+        </span>
+        <button class="btn btn-ghost btn-sm" onclick="carregarSuspeitos()">↺</button>
+      </div>
+      <div id="admin-suspeitos" style="margin-bottom:.75rem;">
+        <span style="font-size:.82rem;color:var(--ink-d)">A carregar…</span>
+      </div>
 
       <div class="mdivider"></div>
 
@@ -1054,6 +1104,21 @@ main {
         A carregar PDF…
       </div>
       <canvas id="pdf-canvas" style="display:none"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Aviso/Bloquear utilizador (admin) -->
+<div class="ov" id="ov-moderar">
+  <div class="modal" style="max-width:440px">
+    <div class="mhead">
+      <h2 id="mod-titulo">Moderar utilizador</h2>
+      <button class="mclose" onclick="closeOv('ov-moderar')">✕</button>
+    </div>
+    <div id="mod-body"></div>
+    <div class="factions">
+      <button class="btn btn-ghost" onclick="closeOv('ov-moderar')">Cancelar</button>
+      <button class="btn btn-danger" id="mod-btn-confirm" onclick="confirmarModeracao()">Confirmar</button>
     </div>
   </div>
 </div>

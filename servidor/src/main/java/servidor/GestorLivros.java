@@ -15,9 +15,11 @@ public class GestorLivros {
     private static final String PDF_DIR   = "data/pdfs";
     private static final int    DIAS_PRAZO = 7;
 
-    private final BaseDados       baseDados;
-    private final GestorHistorico gestorHistorico;
-    private final Servidor        servidor;
+    private final BaseDados         baseDados;
+    private final GestorHistorico   gestorHistorico;
+    private final Servidor          servidor;
+    private final AnalisadorConteudo analisador = new AnalisadorConteudo();
+    private GestorTCP               gestorTCP;  // injectado após construção
     private List<Livro> livros;
     private final Map<String, Queue<String>> filasEspera = new HashMap<>();
 
@@ -28,6 +30,9 @@ public class GestorLivros {
         this.livros          = baseDados.carregar();
         new File(PDF_DIR).mkdirs();
     }
+
+    /** Injecta o GestorTCP após criação (evita dependência circular). */
+    public void setGestorTCP(GestorTCP tcp) { this.gestorTCP = tcp; }
 
     public synchronized List<Livro> listarTodos() {
         return new ArrayList<>(livros);
@@ -68,9 +73,31 @@ public class GestorLivros {
 
         if (pdfStream != null) {
             try {
-                Files.copy(pdfStream, new File(PDF_DIR, id + ".pdf").toPath());
+                File pdfFile = new File(PDF_DIR, id + ".pdf");
+                Files.copy(pdfStream, pdfFile.toPath());
                 livro.setTemPdf(true);
                 livro.setUploadPor(nome);
+
+                // ── Análise de conteúdo / vírus ───────────────────────────
+                AnalisadorConteudo.ResultadoAnalise resultado = analisador.analisar(pdfFile);
+                if (!resultado.aprovado()) {
+                    livro.setFlagAdmin(true);
+                    livro.setMotivoSuspeicao(resultado.motivo());
+                    System.out.printf("[MODERAÇÃO] Livro '%s' sinalizado por: %s (upload por %s)%n",
+                        titulo, resultado.motivo(), nome);
+                    // Notificar admin via SSE (web)
+                    servidor.notificarTodos("notificacao",
+                        "🚨 Conteúdo suspeito detectado: \"" + titulo + "\" (por " + nome
+                        + ") — " + resultado.motivo(), "");
+                    // Notificar admin via TCP (JavaFX)
+                    if (gestorTCP != null) {
+                        gestorTCP.notificarUtilizador("admin",
+                            "🚨 Conteúdo suspeito: \"" + titulo + "\" (upload: " + nome
+                            + ") — " + resultado.motivo());
+                    }
+                } else {
+                    System.out.printf("[MODERAÇÃO] PDF aprovado: '%s' (upload por %s)%n", titulo, nome);
+                }
             } catch (IOException e) {
                 System.err.println("[AVISO] Falha ao guardar PDF: " + e.getMessage());
             }
@@ -79,7 +106,11 @@ public class GestorLivros {
         livros.add(livro);
         baseDados.guardar(livros);
         servidor.notificarTodos("atualizacao", "novo_livro", nome);
-        return Map.of("ok", true, "id", id, "mensagem", "Livro inserido com sucesso");
+
+        String aviso = livro.isFlagAdmin() ? " ⚠ Conteúdo sinalizado para revisão." : "";
+        return Map.of("ok", true, "id", id,
+            "mensagem", "Livro inserido com sucesso" + aviso,
+            "flagAdmin", livro.isFlagAdmin());
     }
 
     public File getPdfFile(String id) {
@@ -182,6 +213,11 @@ public class GestorLivros {
         r.put("requisitados", req);
         r.put("livros", lista);
         return r;
+    }
+
+    /** Devolve todos os livros sinalizados pelo sistema de moderação. */
+    public synchronized List<Livro> listarSuspeitos() {
+        return livros.stream().filter(Livro::isFlagAdmin).collect(Collectors.toList());
     }
 
     private Livro buscar(String id) {

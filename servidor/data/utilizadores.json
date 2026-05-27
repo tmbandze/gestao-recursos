@@ -1,0 +1,58 @@
+[
+  {
+    "id": "4c809552-7d2e-47a0-8c5d-c5f4e2d6b7d0",
+    "nome": "admin",
+    "email": "admin@biblioteca.local",
+    "salt": "f688c62c02d8babc03212be461c91155",
+    "passwordHash": "95c89d651b340120e6264ccbd27abd82d02258336180a49473aa407c61cad1e3"
+  },
+  {
+    "id": "67860065-009f-4268-bdf6-463693f0b27c",
+    "nome": "Mateus Cossa",
+    "email": "cossa@gmail.com",
+    "salt": "5b6b9a0198654041d6ce19fa3378d1c0",
+    "passwordHash": "0d9857b827d46a71fa0cdf825c35beb404e1e92e38be6787eda1fd62914daa0a"
+  },
+  {
+    "id": "04ba5653-21ac-4c8a-8590-c034dad358bc",
+    "nome": "Walter",
+    "email": "waltercossa@gmail.com",
+    "salt": "c79435eff47cf5a2e0391a749c2a6bbd",
+    "passwordHash": "b407a3d934198a73efa3b3c03871d635a01414ff05fbc392196edcb8168eb599"
+  },
+  {
+    "id": "40a79f4a-0abe-41a9-950d-090885dbca49",
+    "nome": "adilson chaguala",
+    "email": "adilshaguala0@gmail.com",
+    "salt": "bb1d505c7b1f748e99263842c2895e20",
+    "passwordHash": "4d881ad5f6f89796242f6db65fcc9e6c7104fd0778858a3780f7ce82497bcf96"
+  },
+  {
+    "id": "f6790d97-f77f-4d07-aae8-805e7cc9b91d",
+    "nome": "Denilson Álbert",
+    "email": "albertdenilson1@gmail.com",
+    "salt": "f2b5ec60fb4367d3083bdd4f39c16618",
+    "passwordHash": "ba3e5d758d31b8b7cb5c9c9a0b0c48608f4d4f9a995b8df06e880183e5adc3dc"
+  },
+  {
+    "id": "a29c08ce-499a-4054-a723-2d042bf029ef",
+    "nome": "Donaldo",
+    "email": "donaldo@gmail.com",
+    "salt": "ab1c7edce65b3e388237c5576696e7ab",
+    "passwordHash": "8a5facca976e3f21f58da456b4351a397febcfb26aec27ff3ce1a1785cf79289"
+  },
+  {
+    "id": "616b3ac9-88e5-4336-86ba-323c84d9cf4c",
+    "nome": "Isabel Nunes",
+    "email": "isabelnunesandrade039@gmail.com",
+    "salt": "c56e9d12fbfe402240cd36fc8318f12a",
+    "passwordHash": "5f3ec7ab61ee97a66eff130ac6e3d750f33c554b5b70cf84937eb4f8b6aaa831"
+  },
+  {
+    "id": "9b530c27-f97b-47a9-9134-2a619702c18e",
+    "nome": "Dboy",
+    "email": "dboy@gmail.com",
+    "salt": "abcb8bae7f3d67c99a79e047f3c3a5f9",
+    "passwordHash": "821126e586ed40d1f91fd6d36d69713ddd98f316e433fd196c7a8f7ebfd0e40c"
+  }
+]

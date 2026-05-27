@@ -1,0 +1,23 @@
+[
+  {
+    "id": "6e1e10c0-a028-4601-bcde-f1855ae6bc6a",
+    "nome": "admin",
+    "email": "admin@biblioteca.local",
+    "salt": "9538a2b1fc1f1cc992c9b02245c7c29d",
+    "passwordHash": "7f8390a9df4afa360f3b22e1251bdb860fe134320592dc4eb1e53114616c2337"
+  },
+  {
+    "id": "5fc95c84-3c0c-4cae-871c-467d3449f3b3",
+    "nome": "Tomas Bandze",
+    "email": "tomas@uni.ac.mz",
+    "salt": "59025ce6f1bf0e4660b6ca61489ca521",
+    "passwordHash": "9dc80b36b0d9c698a3529f70f85b57b6215aa214fc77e5e17957aa2d27de81f0"
+  },
+  {
+    "id": "b65ef6dd-7f55-4ab3-b7d7-b1b73f04d2de",
+    "nome": "Tomas Mathe",
+    "email": "tmbandze@gmail.com",
+    "salt": "6362de43e3f7d344441315fc9c4a5c2b",
+    "passwordHash": "ef795509e49092ea321c4a18eddeefc6bbaaf5e1442fc7e338891f9150031aaa"
+  }
+]

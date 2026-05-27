@@ -26,8 +26,19 @@ public class Protocolo {
     public static final String ATUALIZAR   = "ATUALIZAR";
 
     // Comandos de administração
-    public static final String ADMIN_USUARIOS = "ADMIN_USUARIOS";
-    public static final String ADMIN_SISTEMA  = "ADMIN_SISTEMA";
-    public static final String USUARIOS       = "USUARIOS";
-    public static final String SISTEMA        = "SISTEMA";
+    public static final String ADMIN_USUARIOS    = "ADMIN_USUARIOS";
+    public static final String ADMIN_SISTEMA     = "ADMIN_SISTEMA";
+    public static final String USUARIOS          = "USUARIOS";
+    public static final String SISTEMA           = "SISTEMA";
+
+    // Moderação de conteúdo
+    public static final String ADMIN_FLAGGED     = "ADMIN_FLAGGED";
+    public static final String ADMIN_AVISAR      = "ADMIN_AVISAR";
+    public static final String ADMIN_BLOQUEAR    = "ADMIN_BLOQUEAR";
+    public static final String ADMIN_DESBLOQUEAR = "ADMIN_DESBLOQUEAR";
+    public static final String FLAGGED           = "FLAGGED";
+
+    // Recuperação de password
+    public static final String RECUPERAR_PASSWORD = "RECUPERAR_PASSWORD";
+    public static final String RESET_PASSWORD     = "RESET_PASSWORD";
 }

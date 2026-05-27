@@ -6,8 +6,10 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
@@ -133,15 +135,107 @@ public class ControladorPrincipal {
     // ── Login e ligação ─────────────────────────────────
 
     private void pedirLogin() {
-        TextInputDialog dialogo = new TextInputDialog();
-        dialogo.setTitle("Login");
+        // Diálogo personalizado com campo de nome + botão "Esqueci a password"
+        Dialog<String> dialogo = new Dialog<>();
+        dialogo.setTitle("Login — Biblioteca Digital");
         dialogo.setHeaderText("Sistema de Gestão de Recursos");
-        dialogo.setContentText("Nome de estudante:");
+
+        TextField campoNome = new TextField();
+        campoNome.setPromptText("O teu nome de utilizador");
+        campoNome.setPrefWidth(260);
+
+        Button btnEsqueci = new Button("Esqueci a password...");
+        btnEsqueci.setStyle("-fx-font-size:11;-fx-text-fill:#4a90e2;-fx-background-color:transparent;-fx-cursor:hand;");
+        btnEsqueci.setOnAction(e -> pedirRecuperacaoPassword());
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10); grid.setVgap(10);
+        grid.setPadding(new Insets(20, 20, 10, 20));
+        grid.add(new Label("Nome:"), 0, 0);
+        grid.add(campoNome, 1, 0);
+
+        HBox linhaEsqueci = new HBox(btnEsqueci);
+        linhaEsqueci.setAlignment(Pos.CENTER_RIGHT);
+        grid.add(linhaEsqueci, 1, 1);
+
+        dialogo.getDialogPane().setContent(grid);
+        dialogo.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialogo.setResultConverter(bt -> bt == ButtonType.OK ? campoNome.getText().trim() : null);
+
+        // Foco automático no campo de nome
+        dialogo.getDialogPane().lookupButton(ButtonType.OK);
+        javafx.application.Platform.runLater(campoNome::requestFocus);
+
         Optional<String> resultado = dialogo.showAndWait();
         resultado.ifPresent(nome -> {
             nomeEstudante = nome.trim();
             if (!nomeEstudante.isEmpty()) conectar();
         });
+    }
+
+    /** Diálogo de recuperação de password em dois passos. */
+    private void pedirRecuperacaoPassword() {
+        // Passo 1: introduzir email
+        TextInputDialog dlgEmail = new TextInputDialog();
+        dlgEmail.setTitle("Recuperar Password");
+        dlgEmail.setHeaderText("Passo 1 — Identificação");
+        dlgEmail.setContentText("Email da conta:");
+        Optional<String> emailOpt = dlgEmail.showAndWait();
+        if (emailOpt.isEmpty() || emailOpt.get().trim().isEmpty()) return;
+
+        // Enviar pedido ao servidor
+        if (cliente == null || !cliente.isConectado()) {
+            try {
+                cliente = new Cliente();
+                cliente.conectar();
+                // Arrancar service de leitura temporária
+                NotificacaoService svc = new NotificacaoService(cliente, this);
+                Thread t = new Thread(svc, "rec-notif");
+                t.setDaemon(true);
+                t.start();
+            } catch (IOException ex) {
+                mostrarNotificacao("✖  Sem ligação ao servidor.");
+                return;
+            }
+        }
+
+        String r = cliente.enviar(Protocolo.RECUPERAR_PASSWORD + "|" + emailOpt.get().trim());
+        String msg = extrairMensagem(r);
+
+        Alert info = new Alert(Alert.AlertType.INFORMATION, msg, ButtonType.OK);
+        info.setTitle("Recuperar Password");
+        info.setHeaderText("Código de recuperação");
+        info.showAndWait();
+
+        if (r != null && r.startsWith(Protocolo.OK)) {
+            // Passo 2: introduzir código e nova password
+            Dialog<String[]> dlgReset = new Dialog<>();
+            dlgReset.setTitle("Recuperar Password");
+            dlgReset.setHeaderText("Passo 2 — Redefinir Password");
+
+            TextField campoToken   = new TextField();
+            campoToken.setPromptText("Código recebido (8 caracteres)");
+            PasswordField campoNovaPwd = new PasswordField();
+            campoNovaPwd.setPromptText("Nova password (mínimo 6 caracteres)");
+
+            GridPane g = new GridPane();
+            g.setHgap(10); g.setVgap(10); g.setPadding(new Insets(20));
+            g.add(new Label("Código:"),        0, 0); g.add(campoToken,    1, 0);
+            g.add(new Label("Nova password:"), 0, 1); g.add(campoNovaPwd,  1, 1);
+            dlgReset.getDialogPane().setContent(g);
+            dlgReset.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            dlgReset.setResultConverter(bt -> bt == ButtonType.OK
+                ? new String[]{campoToken.getText().trim(), campoNovaPwd.getText()}
+                : null);
+
+            dlgReset.showAndWait().ifPresent(campos -> {
+                if (campos[0].isEmpty() || campos[1].isEmpty()) {
+                    mostrarNotificacao("⚠  Código e nova password são obrigatórios."); return;
+                }
+                String resp = cliente.enviar(Protocolo.RESET_PASSWORD + "|" + campos[0] + "|" + campos[1]);
+                mostrarNotificacao(extrairMensagem(resp));
+            });
+        }
     }
 
     private void conectar() {
@@ -408,6 +502,13 @@ public class ControladorPrincipal {
     public void mostrarNotificacao(String texto) {
         String hora = LocalTime.now().format(HORA);
         painelNotificacoes.appendText("[" + hora + "]  " + texto + "\n");
+    }
+
+    /** Limpa o histórico de notificações no painel lateral. */
+    @FXML
+    public void limparNotificacoes() {
+        painelNotificacoes.clear();
+        mostrarNotificacao("ℹ  Histórico de notificações limpo.");
     }
 
     public void mostrarErroConexao() {

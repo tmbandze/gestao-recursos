@@ -18,11 +18,15 @@ if (typeof pdfjsLib !== 'undefined') {
 // ── Auth tabs ───────────────────────────────────────────────────────────
 
 function switchTab(t) {
-  const si = t === 'si';
-  document.getElementById('aform-si').classList.toggle('active',  si);
-  document.getElementById('aform-su').classList.toggle('active', !si);
-  document.getElementById('atab-si').classList.toggle('active',   si);
-  document.getElementById('atab-su').classList.toggle('active',  !si);
+  ['si','su','rec'].forEach(id => {
+    const form = document.getElementById('aform-' + id);
+    const tab  = document.getElementById('atab-'  + id);
+    if (form) form.classList.toggle('active', id === t);
+    if (tab)  tab.classList.toggle('active',  id === t);
+  });
+  // Mostrar/esconder tab de recuperação conforme necessário
+  const tabRec = document.getElementById('atab-rec');
+  if (tabRec) tabRec.style.display = (t === 'rec') ? 'block' : 'none';
 }
 
 // ── Autenticação ────────────────────────────────────────────────────────
@@ -85,7 +89,7 @@ function mostrarMain() {
 
   // Admin panel: visibilidade controlada apenas pela flag do servidor
   document.getElementById('admin-box').style.display = isAdmin ? 'block' : 'none';
-  if (isAdmin) { recarregarLog(); carregarUtilizadores(); }
+  if (isAdmin) { recarregarLog(); carregarUtilizadores(); carregarSuspeitos(); }
 
   carregarLivros();
   ligarSSE();
@@ -129,7 +133,7 @@ function ligarSSE() {
     toast('Lista de livros actualizada', 'inf');
   });
   sse.addEventListener('utilizadores_update', () => {
-    if (isAdmin) carregarUtilizadores();
+    if (isAdmin) { carregarUtilizadores(); carregarSuspeitos(); }
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));
   sse.onerror = () => {};
@@ -469,6 +473,125 @@ function mkBtn(text, cls, fn) {
   const b = document.createElement('button');
   b.className = `btn ${cls}`; b.textContent = text; b.onclick = fn;
   return b;
+}
+
+// ── Recuperação de password ──────────────────────────────────────────────
+
+async function solicitarRecuperacao() {
+  const email = v('rec-email');
+  if (!email) { toast('Introduz o teu email', 'err'); return; }
+
+  const btn = document.getElementById('rec-btn1');
+  btn.disabled = true; btn.textContent = 'A solicitar…';
+
+  const r = await api('/api/recuperar-password', 'POST', { email });
+
+  btn.disabled = false; btn.textContent = 'Pedir código de recuperação';
+
+  if (r.erro) { toast(r.erro, 'err'); return; }
+
+  toast(r.mensagem, 'ok');
+
+  // Mostrar passo 2
+  document.getElementById('rec-step2').style.display = 'block';
+  document.getElementById('rec-btn1').style.display  = 'none';
+}
+
+async function confirmarReset() {
+  const token   = (v('rec-token') || '').toUpperCase();
+  const novaPwd = v('rec-nova-pw');
+  if (!token || !novaPwd) { toast('Preenche todos os campos', 'err'); return; }
+  if (novaPwd.length < 6) { toast('A nova password deve ter pelo menos 6 caracteres', 'err'); return; }
+
+  const r = await api('/api/reset-password', 'POST', { token, novaPassword: novaPwd });
+  if (r.erro) { toast(r.erro, 'err'); return; }
+
+  toast(r.mensagem, 'ok');
+
+  // Limpar e voltar ao login
+  document.getElementById('rec-email').value   = '';
+  document.getElementById('rec-token').value   = '';
+  document.getElementById('rec-nova-pw').value = '';
+  document.getElementById('rec-step2').style.display = 'none';
+  document.getElementById('rec-btn1').style.display  = 'block';
+  switchTab('si');
+}
+
+// ── Admin: conteúdo suspeito ─────────────────────────────────────────────
+
+let _modAcao = null, _modAlvo = null;
+
+async function carregarSuspeitos() {
+  const box = document.getElementById('admin-suspeitos');
+  if (!box) return;
+  box.innerHTML = '<span style="font-size:.82rem;color:var(--ink-d)">A carregar…</span>';
+  const r = await api('/api/admin/suspeitos');
+  if (r.erro || !Array.isArray(r.livros)) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--ink-d)">Erro ao carregar.</span>';
+    return;
+  }
+  if (!r.livros.length) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--green)">✓ Nenhum conteúdo suspeito.</span>';
+    return;
+  }
+  box.innerHTML = r.livros.map(l => `
+    <div style="background:var(--red-bg);border:1.5px solid #e9b0b0;border-radius:var(--rs);
+                padding:.7rem 1rem;margin-bottom:.5rem;">
+      <div style="font-family:var(--fd);font-size:.9rem;font-weight:600;margin-bottom:.25rem">
+        ${esc(l.titulo)}
+      </div>
+      <div style="font-size:.78rem;color:var(--ink-m);margin-bottom:.5rem">
+        Upload por: <strong>${esc(l.uploadPor || '—')}</strong>
+        &nbsp;·&nbsp; Motivo: <span style="color:var(--red)">${esc(l.motivoSuspeicao || '—')}</span>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button class="btn btn-danger btn-sm" onclick="apagarLivroSuspeito('${l.id}','${esc(l.titulo)}')">
+          🗑 Apagar Livro
+        </button>
+        ${l.uploadPor ? `
+        <button class="btn btn-outline-orange btn-sm"
+                onclick="abrirModerar('avisar','${esc(l.uploadPor)}','${esc(l.motivoSuspeicao||'')}')">
+          ⚠ Avisar ${esc(l.uploadPor)}
+        </button>
+        <button class="btn btn-danger btn-sm"
+                onclick="abrirModerar('bloquear','${esc(l.uploadPor)}','')">
+          🚫 Bloquear ${esc(l.uploadPor)}
+        </button>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function apagarLivroSuspeito(id, titulo) {
+  if (!confirm(`Apagar permanentemente:\n"${titulo}"?\nEsta acção não pode ser revertida.`)) return;
+  const r = await api(`/api/livros/${id}`, 'DELETE');
+  r.erro ? toast(r.erro, 'err') : toast('Livro apagado.', 'ok');
+  carregarSuspeitos();
+  carregarLivros();
+}
+
+function abrirModerar(acao, nomePara, motivo) {
+  _modAcao = acao; _modAlvo = nomePara;
+  document.getElementById('mod-titulo').textContent =
+    acao === 'avisar' ? `Avisar "${nomePara}"` : `Bloquear "${nomePara}"`;
+  document.getElementById('mod-body').innerHTML = acao === 'avisar'
+    ? `<div class="field"><label>Motivo do aviso</label>
+       <input type="text" id="mod-motivo" value="${esc(motivo)}" placeholder="Descreve o motivo"></div>`
+    : `<p>Bloquear <strong>${esc(nomePara)}</strong>? O utilizador não poderá fazer login.</p>`;
+  openOv('ov-moderar');
+}
+
+async function confirmarModeracao() {
+  if (!_modAcao || !_modAlvo) return;
+  let r;
+  if (_modAcao === 'avisar') {
+    const motivo = v('mod-motivo') || 'Conteúdo impróprio detectado';
+    r = await api(`/api/admin/avisar/${encodeURIComponent(_modAlvo)}`, 'POST', { motivo });
+  } else {
+    r = await api(`/api/admin/bloquear/${encodeURIComponent(_modAlvo)}`, 'POST');
+  }
+  closeOv('ov-moderar');
+  r.erro ? toast(r.erro, 'err') : toast('Acção executada com sucesso.', 'ok');
+  carregarUtilizadores();
 }
 
 // ── Enter keys ───────────────────────────────────────────────────────────

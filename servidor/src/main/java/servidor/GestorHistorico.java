@@ -7,6 +7,7 @@ import shared.Emprestimo;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -54,7 +55,7 @@ public class GestorHistorico {
     private List<Emprestimo> carregar() {
         File f = new File(FICHEIRO);
         if (!f.exists()) return new ArrayList<>();
-        try (Reader r = new FileReader(f)) {
+        try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
             Type tipo = new TypeToken<List<Emprestimo>>() {}.getType();
             List<Emprestimo> lista = gson.fromJson(r, tipo);
             return lista != null ? lista : new ArrayList<>();
@@ -65,7 +66,7 @@ public class GestorHistorico {
     }
 
     private void guardar() {
-        try (Writer w = new FileWriter(FICHEIRO)) {
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(FICHEIRO), StandardCharsets.UTF_8)) {
             gson.toJson(emprestimos, w);
         } catch (IOException e) {
             System.err.println("[ERRO] Falha ao guardar histórico: " + e.getMessage());

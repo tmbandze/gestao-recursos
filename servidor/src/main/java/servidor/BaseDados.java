@@ -7,6 +7,7 @@ import shared.Livro;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,7 +23,7 @@ public class BaseDados {
     public synchronized List<Livro> carregar() {
         File f = new File(FICHEIRO);
         if (!f.exists()) return new ArrayList<>();
-        try (Reader r = new FileReader(f)) {
+        try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
             Type tipo = new TypeToken<List<Livro>>() {}.getType();
             List<Livro> lista = gson.fromJson(r, tipo);
             return lista != null ? lista : new ArrayList<>();
@@ -33,7 +34,7 @@ public class BaseDados {
     }
 
     public synchronized void guardar(List<Livro> livros) {
-        try (Writer w = new FileWriter(FICHEIRO)) {
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(FICHEIRO), StandardCharsets.UTF_8)) {
             gson.toJson(livros, w);
         } catch (IOException e) {
             System.err.println("[ERRO] Falha ao guardar base de dados: " + e.getMessage());

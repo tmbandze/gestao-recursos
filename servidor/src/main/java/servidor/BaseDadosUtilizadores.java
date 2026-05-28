@@ -7,6 +7,7 @@ import shared.Utilizador;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,7 +22,7 @@ public class BaseDadosUtilizadores {
     public synchronized List<Utilizador> carregar() {
         File f = new File(FICHEIRO);
         if (!f.exists()) return new ArrayList<>();
-        try (Reader r = new FileReader(f)) {
+        try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
             Type tipo = new TypeToken<List<Utilizador>>() {}.getType();
             List<Utilizador> lista = gson.fromJson(r, tipo);
             return lista != null ? lista : new ArrayList<>();
@@ -32,7 +33,7 @@ public class BaseDadosUtilizadores {
     }
 
     public synchronized void guardar(List<Utilizador> utilizadores) {
-        try (Writer w = new FileWriter(FICHEIRO)) {
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(FICHEIRO), StandardCharsets.UTF_8)) {
             gson.toJson(utilizadores, w);
         } catch (IOException e) {
             System.err.println("[ERRO] Falha ao guardar utilizadores: " + e.getMessage());

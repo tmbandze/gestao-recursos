@@ -33,8 +33,9 @@ public class Servidor {
         logger             = new Logger();
         gestorTCP          = new GestorTCP(gestorLivros, gestorUtilizadores, gestorHistorico, logger);
         monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger);
-        // Injectar gestorTCP no gestor de livros (necessário para notificações de conteúdo suspeito)
+        // Injectar dependências no gestor de livros
         gestorLivros.setGestorTCP(gestorTCP);
+        gestorLivros.setGestorUtilizadores(gestorUtilizadores);
     }
 
     public void iniciar() {
@@ -214,6 +215,36 @@ public class Servidor {
             }
             var r = gestorLivros.apagarAvaliacao(ctx.pathParam("id"), alvo);
             if (r.containsKey("ok")) logger.registar("APAGAR_AVAL", nome, alvo);
+            ctx.json(r);
+        });
+
+        // ── Multas ────────────────────────────────────────────────────
+        // Utilizador vê as suas próprias multas
+        app.get("/api/multas", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            ctx.json(gestorUtilizadores.verMultas(nome));
+        });
+
+        // Admin: lista todos os utilizadores com multas
+        app.get("/api/admin/multas", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            ctx.json(Map.of("multas", gestorUtilizadores.listarMultas()));
+        });
+
+        // Admin: perdoa a multa de um utilizador
+        app.post("/api/admin/multas/{utilizador}/perdoar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String alvo = ctx.pathParam("utilizador");
+            var r = gestorUtilizadores.perdoarMulta(alvo);
+            if (r.containsKey("ok")) {
+                logger.registar("PERDOAR_MULTA", nome, alvo);
+                notificarUsuario(alvo,
+                    "✅ A tua multa por atraso foi perdoada pelo administrador. " +
+                    "Já podes requisitar novos livros.");
+                notificarTodos("multa_update", "perdoada:" + alvo, "");
+            }
             ctx.json(r);
         });
 

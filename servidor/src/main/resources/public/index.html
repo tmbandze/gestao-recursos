@@ -856,6 +856,19 @@ main {
   border-top-color: #fff;
 }
 
+/* ─── BANNER DE MULTA ───────────────────────────────────────────── */
+.multa-banner {
+  background: #fff3cd;
+  border-bottom: 2px solid #f0c040;
+  padding: .7rem 1.75rem;
+  display: flex; align-items: center; gap: .75rem;
+  font-size: .875rem;
+  flex-wrap: wrap;
+}
+
+.multa-banner strong { color: #7a4f00; }
+.multa-banner-icon { font-size: 1.25rem; }
+
 /* ─── AVALIAÇÕES ─────────────────────────────────────────────────── */
 .aval-section { margin-top: 1.25rem; }
 
@@ -1123,6 +1136,19 @@ main {
         <button class="btn btn-ghost btn-sm" id="btn-reload-users" onclick="carregarUtilizadores()">↺</button>
       </div>
       <div class="admin-users-grid" id="admin-users"></div>
+
+      <div class="mdivider"></div>
+
+      <!-- Multas por atraso -->
+      <div style="margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#7a4f00">
+          💸 Multas por Atraso
+        </span>
+        <button class="btn btn-ghost btn-sm" onclick="carregarMultas()">↺</button>
+      </div>
+      <div id="admin-multas" style="margin-bottom:.75rem;">
+        <span style="font-size:.82rem;color:var(--ink-d)">A carregar…</span>
+      </div>
 
       <div class="mdivider"></div>
 

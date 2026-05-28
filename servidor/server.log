@@ -1,0 +1,8 @@
+[INFO] Servidor web iniciado em http://0.0.0.0:8080
+[INFO] Partilha com colegas: http://<SEU_IP>:8080
+[MONITOR] Monitor de prazos iniciado (verifica de hora em hora).
+[TCP] Servidor JavaFX iniciado na porta 9090
+[2026-05-28 12:07:47] ATRASO       | Mateus Cossa    | Number line (1d, 0.50€)
+[2026-05-28 12:07:48] LOGIN        | Teste Um        | teste1@bib.pt
+[2026-05-28 12:07:48] LOGIN        | admin           | admin@biblioteca.local
+[2026-05-28 12:07:48] REQUISITAR   | Teste Um        | bb97364d-6ed2-475b-b578-7e4aa3e32919

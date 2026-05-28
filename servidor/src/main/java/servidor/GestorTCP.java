@@ -290,6 +290,56 @@ public class GestorTCP {
                             enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
                         }
                     }
+                    // ── Multas ───────────────────────────────────────────
+                    case Protocolo.VER_MULTAS -> {
+                        if (nome == null) { enviar(out, Protocolo.ERRO + "|Não autenticado"); break; }
+                        var r = gestorUtilizadores.verMultas(nome);
+                        double total = ((Number) r.get("multaTotal")).doubleValue();
+                        if (total <= 0) {
+                            enviar(out, Protocolo.OK + "|Sem multas pendentes.");
+                        } else {
+                            @SuppressWarnings("unchecked")
+                            var lista = (java.util.List<shared.RegistoMulta>) r.get("multas");
+                            StringBuilder sbM = new StringBuilder(Protocolo.MULTA)
+                                .append("|total:").append(String.format("%.2f", total)).append("|");
+                            for (int i = 0; i < lista.size(); i++) {
+                                if (i > 0) sbM.append(";");
+                                shared.RegistoMulta rm = lista.get(i);
+                                sbM.append(rm.getTituloLivro()).append("~")
+                                   .append(rm.getDiasAtraso()).append("d~")
+                                   .append(String.format("%.2f", rm.getValor())).append("€~")
+                                   .append(rm.getData());
+                            }
+                            enviar(out, sbM.toString());
+                        }
+                    }
+                    case Protocolo.ADMIN_LISTAR_MULTAS -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        var lista = gestorUtilizadores.listarMultas();
+                        if (lista.isEmpty()) { enviar(out, Protocolo.OK + "|Sem multas pendentes."); break; }
+                        StringBuilder sbM = new StringBuilder(Protocolo.MULTA + "|");
+                        for (int i = 0; i < lista.size(); i++) {
+                            if (i > 0) sbM.append(";");
+                            var u = lista.get(i);
+                            sbM.append(u.get("nome")).append("~")
+                               .append(String.format("%.2f", ((Number) u.get("multaTotal")).doubleValue())).append("€");
+                        }
+                        enviar(out, sbM.toString());
+                    }
+                    case Protocolo.ADMIN_PERDOAR_MULTA -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        String dest = p.length > 1 ? p[1].trim() : "";
+                        var r = gestorUtilizadores.perdoarMulta(dest);
+                        if (r.containsKey("ok")) {
+                            logger.registar("PERDOAR_MULTA_TCP", nome, dest);
+                            notificarUtilizador(dest,
+                                "✅ A tua multa foi perdoada pelo administrador. Já podes requisitar livros.");
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem"));
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
+                    }
+
                     // ── Avaliações ────────────────────────────────────────
                     case Protocolo.AVALIAR -> {
                         if (nome == null) { enviar(out, Protocolo.ERRO + "|Não autenticado"); break; }

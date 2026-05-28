@@ -80,20 +80,21 @@ public class MonitorPrazos {
 
         if (diasAtraso > 0) {
             // ── Livro em atraso ──────────────────────────────────────────
+            double multaEstimada = diasAtraso * GestorLivros.MULTA_POR_DIA;
             String msgEstudante = String.format(
                 "⚠  ATRASO: O livro \"%s\" deveria ter sido devolvido há %d dia(s)! " +
-                "Prazo era: %s. Por favor devolva imediatamente.",
-                emp.getTituloLivro(), diasAtraso, formatarData(emp.getPrazo()));
+                "Multa estimada: %.2f€. Prazo era: %s. Por favor devolva imediatamente.",
+                emp.getTituloLivro(), diasAtraso, multaEstimada, formatarData(emp.getPrazo()));
 
             gestorTCP.notificarUtilizador(emp.getEstudante(), msgEstudante);
 
             // Notificar admin (somente se estiver conectado)
             gestorTCP.notificarUtilizador("admin", String.format(
-                "📋 Atraso: %s — \"%s\" (%d dia(s) em atraso)",
-                emp.getEstudante(), emp.getTituloLivro(), diasAtraso));
+                "📋 Atraso: %s — \"%s\" (%d dia(s), multa est. %.2f€)",
+                emp.getEstudante(), emp.getTituloLivro(), diasAtraso, multaEstimada));
 
             logger.registar("ATRASO", emp.getEstudante(),
-                emp.getTituloLivro() + " (" + diasAtraso + "d atraso)");
+                emp.getTituloLivro() + " (" + diasAtraso + "d, " + String.format("%.2f", multaEstimada) + "€)");
 
         } else if (diasRestantes == 0) {
             // ── Devolução hoje ───────────────────────────────────────────

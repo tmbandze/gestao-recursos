@@ -1,5 +1,6 @@
 package servidor;
 
+import shared.RegistoMulta;
 import shared.Utilizador;
 
 import java.nio.charset.StandardCharsets;
@@ -182,6 +183,76 @@ public class GestorUtilizadores {
     public synchronized boolean estaBloqueado(String nome) {
         return utilizadores.stream().filter(u -> u.getNome().equalsIgnoreCase(nome))
             .findFirst().map(Utilizador::isBloqueado).orElse(false);
+    }
+
+    // ── Multas por atraso ─────────────────────────────────────────────────
+
+    /** Regista uma multa no histórico do utilizador e incrementa o total. */
+    public synchronized void adicionarMulta(String nome, RegistoMulta registo) {
+        utilizadores.stream()
+            .filter(u -> u.getNome().equals(nome))
+            .findFirst()
+            .ifPresent(u -> {
+                u.setMultaTotal(u.getMultaTotal() + registo.getValor());
+                u.getMultas().add(registo);
+                baseDados.guardar(utilizadores);
+                System.out.printf("[MULTA] %s — %.2f€ (%s, %dd atraso)%n",
+                    nome, registo.getValor(), registo.getTituloLivro(), registo.getDiasAtraso());
+            });
+    }
+
+    /** Devolve o total de multa pendente de um utilizador (0.0 se não existe). */
+    public synchronized double getMultaTotal(String nome) {
+        return utilizadores.stream()
+            .filter(u -> u.getNome().equals(nome))
+            .findFirst().map(Utilizador::getMultaTotal).orElse(0.0);
+    }
+
+    /** Admin perdoa toda a multa de um utilizador. */
+    public synchronized Map<String, Object> perdoarMulta(String nome) {
+        Utilizador u = utilizadores.stream()
+            .filter(x -> x.getNome().equalsIgnoreCase(nome))
+            .findFirst().orElse(null);
+        if (u == null) return Map.of("erro", "Utilizador não encontrado");
+        double anterior = u.getMultaTotal();
+        if (anterior <= 0) return Map.of("erro", "Utilizador não tem multas pendentes");
+        u.setMultaTotal(0.0);
+        baseDados.guardar(utilizadores);
+        System.out.printf("[MULTA] Perdoada multa de %s (%.2f€)%n", u.getNome(), anterior);
+        Map<String, Object> r = new java.util.LinkedHashMap<>();
+        r.put("ok",       true);
+        r.put("mensagem", String.format("Multa de %s (%.2f€) perdoada com sucesso.", u.getNome(), anterior));
+        return r;
+    }
+
+    /** Lista todos os utilizadores com multas pendentes (para o admin). */
+    public synchronized java.util.List<Map<String, Object>> listarMultas() {
+        return utilizadores.stream()
+            .filter(u -> u.getMultaTotal() > 0)
+            .map(u -> {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("nome",       u.getNome());
+                m.put("multaTotal", u.getMultaTotal());
+                m.put("multas",     u.getMultas());
+                return (Map<String, Object>) m;
+            })
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** Devolve o resumo de multas de um utilizador (para ele próprio ver). */
+    public synchronized Map<String, Object> verMultas(String nome) {
+        Utilizador u = utilizadores.stream()
+            .filter(x -> x.getNome().equals(nome))
+            .findFirst().orElse(null);
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (u == null) {
+            m.put("multaTotal", 0.0);
+            m.put("multas", java.util.List.of());
+        } else {
+            m.put("multaTotal", u.getMultaTotal());
+            m.put("multas",     u.getMultas());
+        }
+        return m;
     }
 
     // Cria conta admin automática na primeira execução se não existir

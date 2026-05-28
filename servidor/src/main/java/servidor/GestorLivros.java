@@ -7,6 +7,7 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import shared.Avaliacao;
 import shared.EstadoLivro;
 import shared.Livro;
+import shared.RegistoMulta;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -15,19 +16,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class GestorLivros {
-    private static final String PDF_DIR   = "data/pdfs";
-    private static final String COVER_DIR = "data/capas";
-    private static final int    DIAS_PRAZO = 7;
+    private static final String PDF_DIR      = "data/pdfs";
+    private static final String COVER_DIR    = "data/capas";
+    private static final int    DIAS_PRAZO   = 7;
+    /** Valor da multa por cada dia de atraso (em euros). */
+    public  static final double MULTA_POR_DIA = 0.50;
 
     private final BaseDados         baseDados;
     private final GestorHistorico   gestorHistorico;
     private final Servidor          servidor;
     private final AnalisadorConteudo analisador = new AnalisadorConteudo();
-    private GestorTCP               gestorTCP;  // injectado após construção
+    private GestorTCP               gestorTCP;          // injectado após construção
+    private GestorUtilizadores      gestorUtilizadores; // injectado após construção
     private List<Livro> livros;
     private final Map<String, Queue<String>> filasEspera = new HashMap<>();
 
@@ -56,6 +61,9 @@ public class GestorLivros {
 
     /** Injecta o GestorTCP após criação (evita dependência circular). */
     public void setGestorTCP(GestorTCP tcp) { this.gestorTCP = tcp; }
+
+    /** Injecta o GestorUtilizadores após criação (necessário para multas). */
+    public void setGestorUtilizadores(GestorUtilizadores gu) { this.gestorUtilizadores = gu; }
 
     public synchronized List<Livro> listarTodos() {
         // Livros pendentes de aprovação não são visíveis no catálogo público
@@ -200,6 +208,16 @@ public class GestorLivros {
         if (livro.getEstudantesActuais().contains(nome))
             return Map.of("erro", "Já tens este livro requisitado");
 
+        // Bloquear requisição se o utilizador tiver multas pendentes
+        if (gestorUtilizadores != null) {
+            double multa = gestorUtilizadores.getMultaTotal(nome);
+            if (multa > 0) {
+                return Map.of("erro", String.format(
+                    "Tens uma multa pendente de %.2f€ por atraso de devolução. " +
+                    "Regulariza a situação com o administrador para requisitar novos livros.", multa));
+            }
+        }
+
         if (livro.isDisponivel()) {
             String hoje  = LocalDate.now().toString();
             String prazo = LocalDate.now().plusDays(DIAS_PRAZO).toString();
@@ -234,10 +252,38 @@ public class GestorLivros {
         if (!livro.getEstudantesActuais().contains(nome))
             return Map.of("erro", "Não tens este livro requisitado");
 
+        // Guardar prazo antes de remover
+        String prazoStr = livro.getPrazosEstudantes().get(nome);
+
         // Remover este detentor
         livro.getEstudantesActuais().remove(nome);
         livro.getPrazosEstudantes().remove(nome);
         gestorHistorico.registarFim(id, nome, LocalDate.now().toString());
+
+        // ── Calcular multa por atraso ──────────────────────────────────
+        long   diasAtraso  = 0;
+        double multaValor  = 0.0;
+        if (prazoStr != null && gestorUtilizadores != null) {
+            try {
+                LocalDate prazo = LocalDate.parse(prazoStr);
+                diasAtraso = ChronoUnit.DAYS.between(prazo, LocalDate.now());
+                if (diasAtraso > 0) {
+                    multaValor = diasAtraso * MULTA_POR_DIA;
+                    gestorUtilizadores.adicionarMulta(nome,
+                        new RegistoMulta(livro.getTitulo(), (int) diasAtraso, multaValor));
+                    // Notificar utilizador da multa aplicada
+                    servidor.notificarUsuario(nome, String.format(
+                        "💸 Multa aplicada: %.2f€ (%d dia(s) de atraso em \"%s\"). " +
+                        "Contacta o administrador para regularizar.",
+                        multaValor, diasAtraso, livro.getTitulo()));
+                    if (gestorTCP != null) gestorTCP.notificarUtilizador(nome, String.format(
+                        "💸 Multa de %.2f€ aplicada (%d dia(s) de atraso em \"%s\").",
+                        multaValor, diasAtraso, livro.getTitulo()));
+                    servidor.notificarTodos("multa_update",
+                        "nova_multa:" + nome + ":" + String.format("%.2f", multaValor), "");
+                }
+            } catch (Exception ignored) {}
+        }
 
         // Se há fila de espera, promover o próximo para a cópia que ficou livre
         Queue<String> fila = filasEspera.get(id);
@@ -266,7 +312,18 @@ public class GestorLivros {
 
         baseDados.guardar(livros);
         servidor.notificarTodos("atualizacao", "devolvido", nome);
-        return Map.of("ok", true, "mensagem", "Livro devolvido com sucesso");
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("ok", true);
+        if (multaValor > 0) {
+            resp.put("mensagem",     String.format(
+                "Devolvido com %d dia(s) de atraso. Multa aplicada: %.2f€.", diasAtraso, multaValor));
+            resp.put("multaAplicada", multaValor);
+            resp.put("diasAtraso",    diasAtraso);
+        } else {
+            resp.put("mensagem", "Livro devolvido com sucesso");
+        }
+        return resp;
     }
 
     public synchronized Map<String, Object> relatorio() {

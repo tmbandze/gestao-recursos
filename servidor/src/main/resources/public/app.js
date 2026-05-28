@@ -92,7 +92,12 @@ function mostrarMain() {
   document.getElementById('admin-box').style.display = isAdmin ? 'block' : 'none';
   // Histórico de actividade: apenas para admins
   document.getElementById('btn-historico').style.display = isAdmin ? 'inline-flex' : 'none';
-  if (isAdmin) { recarregarLog(); carregarUtilizadores(); carregarPendentes(); carregarSuspeitos(); carregarRecuperacoes(); }
+  if (isAdmin) {
+    recarregarLog(); carregarUtilizadores(); carregarMultas();
+    carregarPendentes(); carregarSuspeitos(); carregarRecuperacoes();
+  } else {
+    verificarMulta();
+  }
 
   carregarLivros();
   ligarSSE();
@@ -159,6 +164,19 @@ function ligarSSE() {
         const info = e.data.replace('novo_pendente:', '');
         toast('⏳ Novo livro para aprovar: ' + info, 'inf');
       }
+    }
+  });
+  sse.addEventListener('multa_update', e => {
+    if (!isAdmin && e.data && e.data.startsWith('perdoada:')) {
+      const alvo = e.data.split(':')[1];
+      if (alvo === nomeUser) {
+        esconderBannerMulta();
+        toast('✅ A tua multa foi perdoada pelo administrador!', 'ok');
+      }
+    } else if (!isAdmin && e.data && e.data.startsWith('nova_multa:')) {
+      verificarMulta();
+    } else if (isAdmin) {
+      carregarMultas();
     }
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));
@@ -408,7 +426,14 @@ function filtrarCategoria(cat) {
 async function acaoLivro(id, acao) {
   closeOv('ov-det');
   const r = await api(`/api/livros/${id}/${acao}`, 'POST');
-  r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
+  if (r.erro) {
+    toast(r.erro, 'err');
+  } else if (r.multaAplicada) {
+    toast('⚠️ ' + r.mensagem, 'err');  // vermelho p/ destacar multa
+    verificarMulta();                   // actualizar banner
+  } else {
+    toast(r.mensagem, 'ok');
+  }
   carregarLivros();
 }
 
@@ -508,14 +533,36 @@ async function abrirMeusLivros() {
   document.getElementById('meus-content').innerHTML =
     '<div class="empty"><div class="spinner"></div><p>A carregar…</p></div>';
 
-  const r = await api('/api/historico/pessoal');
+  // Verificar multas em paralelo
+  const [r, rm] = await Promise.all([
+    api('/api/historico/pessoal'),
+    isAdmin ? Promise.resolve(null) : api('/api/multas')
+  ]);
   if (r.erro) {
     document.getElementById('meus-content').innerHTML =
       `<p class="hist-empty">${esc(r.erro)}</p>`;
     return;
   }
 
-  let html = '<div class="hist-sec-title">Actualmente requisitados</div>';
+  let html = '';
+
+  // Secção de multa pendente
+  if (rm && rm.multaTotal > 0) {
+    html += `<div style="background:#fff3cd;border:1.5px solid #f0c040;border-radius:var(--rs);
+                         padding:.75rem 1rem;margin-bottom:1rem">
+      <div style="font-weight:700;color:#7a4f00;margin-bottom:.35rem">💸 Multa pendente: €${rm.multaTotal.toFixed(2)}</div>
+      <div style="font-size:.82rem;color:#7a4f00">
+        Tens ${(rm.multas||[]).length} multa(s) por atraso de devolução.
+        Não podes requisitar novos livros até regularizares.
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:.5rem"
+              onclick="abrirDetalhesMulta(${JSON.stringify(rm.multas||[])})">
+        Ver detalhes
+      </button>
+    </div>`;
+  }
+
+  html += '<div class="hist-sec-title">Actualmente requisitados</div>';
   if (!r.activos.length) {
     html += '<div class="hist-empty">Nenhum livro requisitado de momento.</div>';
   } else {
@@ -844,6 +891,109 @@ function copiarToken(token) {
     }
     toast('Selecciona o token manualmente: ' + token, 'inf');
   });
+}
+
+// ── Multas por atraso ────────────────────────────────────────────────────
+
+async function verificarMulta() {
+  if (isAdmin) return;
+  const r = await api('/api/multas');
+  if (r.multaTotal > 0) {
+    mostrarBannerMulta(r.multaTotal, r.multas || []);
+  } else {
+    esconderBannerMulta();
+  }
+}
+
+function mostrarBannerMulta(total, multas) {
+  let banner = document.getElementById('multa-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'multa-banner';
+    banner.className = 'multa-banner';
+    // Inserir antes do main
+    const main = document.querySelector('#main-view main');
+    if (main) main.before(banner);
+  }
+  banner.innerHTML = `
+    <span class="multa-banner-icon">💸</span>
+    <span>
+      <strong>Tens uma multa pendente de ${total.toFixed(2)}€</strong>
+      por atraso de devolução.
+      Não podes requisitar novos livros até regularizares.
+      Contacta o administrador.
+    </span>
+    <button class="btn btn-ghost btn-sm" onclick="abrirDetalhesMulta(${JSON.stringify(multas)})">
+      Ver detalhes
+    </button>`;
+}
+
+function esconderBannerMulta() {
+  const banner = document.getElementById('multa-banner');
+  if (banner) banner.remove();
+}
+
+function abrirDetalhesMulta(multas) {
+  const total = multas.reduce((s, m) => s + m.valor, 0);
+  let html = `<p style="margin-bottom:.75rem;font-size:.875rem">
+    Total em dívida: <strong style="color:var(--red)">€${total.toFixed(2)}</strong>
+  </p><div style="display:flex;flex-direction:column;gap:.5rem">`;
+  for (const m of multas) {
+    html += `<div style="background:var(--red-bg);border:1.5px solid #e9b0b0;
+                         border-radius:var(--rs);padding:.6rem .9rem;">
+      <div style="font-weight:600;font-size:.875rem">${esc(m.tituloLivro)}</div>
+      <div style="font-size:.78rem;color:var(--ink-m);margin-top:.15rem">
+        ${m.diasAtraso} dia(s) de atraso &nbsp;·&nbsp;
+        <span style="color:var(--red)">€${(+m.valor).toFixed(2)}</span>
+        &nbsp;·&nbsp; ${formatDate(m.data)}
+      </div>
+    </div>`;
+  }
+  html += `</div><p style="font-size:.78rem;color:var(--ink-d);margin-top:.75rem">
+    Contacta o administrador para regularizar. Taxa: €0.50/dia de atraso.
+  </p>`;
+
+  // Usar modal de detalhes temporariamente
+  document.getElementById('det-titulo').textContent = 'As tuas multas';
+  document.getElementById('det-body').innerHTML = html;
+  document.getElementById('det-acts').innerHTML = '';
+  openOv('ov-det');
+}
+
+// ── Admin: multas ────────────────────────────────────────────────────────
+
+async function carregarMultas() {
+  const box = document.getElementById('admin-multas');
+  if (!box) return;
+  box.innerHTML = '<span style="font-size:.82rem;color:var(--ink-d)">A carregar…</span>';
+  const r = await api('/api/admin/multas');
+  if (!Array.isArray(r.multas) || !r.multas.length) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--green)">✓ Sem multas pendentes.</span>';
+    return;
+  }
+  box.innerHTML = r.multas.map(u => `
+    <div style="background:#fff3cd;border:1.5px solid #f0c040;border-radius:var(--rs);
+                padding:.65rem 1rem;margin-bottom:.4rem;
+                display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:140px">
+        <div style="font-weight:600;font-size:.875rem">${esc(u.nome)}</div>
+        <div style="font-size:.76rem;color:#7a4f00">
+          Multa: <strong>€${(+u.multaTotal).toFixed(2)}</strong>
+          &nbsp;·&nbsp; ${(u.multas||[]).length} ocorrência(s)
+        </div>
+      </div>
+      <button class="btn btn-success btn-sm"
+              onclick="perdoarMulta('${esc(u.nome)}')">
+        ✓ Perdoar multa
+      </button>
+    </div>`).join('');
+}
+
+async function perdoarMulta(nomeUtilizador) {
+  if (!confirm(`Perdoar toda a multa de "${nomeUtilizador}"?`)) return;
+  const r = await api(`/api/admin/multas/${encodeURIComponent(nomeUtilizador)}/perdoar`, 'POST');
+  r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
+  carregarMultas();
 }
 
 // ── Avaliações ───────────────────────────────────────────────────────────

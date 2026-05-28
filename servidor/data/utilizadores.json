@@ -4,55 +4,137 @@
     "nome": "admin",
     "email": "admin@biblioteca.local",
     "salt": "f688c62c02d8babc03212be461c91155",
-    "passwordHash": "95c89d651b340120e6264ccbd27abd82d02258336180a49473aa407c61cad1e3"
+    "passwordHash": "95c89d651b340120e6264ccbd27abd82d02258336180a49473aa407c61cad1e3",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "67860065-009f-4268-bdf6-463693f0b27c",
     "nome": "Mateus Cossa",
     "email": "cossa@gmail.com",
     "salt": "5b6b9a0198654041d6ce19fa3378d1c0",
-    "passwordHash": "0d9857b827d46a71fa0cdf825c35beb404e1e92e38be6787eda1fd62914daa0a"
+    "passwordHash": "0d9857b827d46a71fa0cdf825c35beb404e1e92e38be6787eda1fd62914daa0a",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "04ba5653-21ac-4c8a-8590-c034dad358bc",
     "nome": "Walter",
     "email": "waltercossa@gmail.com",
     "salt": "c79435eff47cf5a2e0391a749c2a6bbd",
-    "passwordHash": "b407a3d934198a73efa3b3c03871d635a01414ff05fbc392196edcb8168eb599"
+    "passwordHash": "b407a3d934198a73efa3b3c03871d635a01414ff05fbc392196edcb8168eb599",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "40a79f4a-0abe-41a9-950d-090885dbca49",
     "nome": "adilson chaguala",
     "email": "adilshaguala0@gmail.com",
     "salt": "bb1d505c7b1f748e99263842c2895e20",
-    "passwordHash": "4d881ad5f6f89796242f6db65fcc9e6c7104fd0778858a3780f7ce82497bcf96"
+    "passwordHash": "4d881ad5f6f89796242f6db65fcc9e6c7104fd0778858a3780f7ce82497bcf96",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "f6790d97-f77f-4d07-aae8-805e7cc9b91d",
     "nome": "Denilson Álbert",
     "email": "albertdenilson1@gmail.com",
     "salt": "f2b5ec60fb4367d3083bdd4f39c16618",
-    "passwordHash": "ba3e5d758d31b8b7cb5c9c9a0b0c48608f4d4f9a995b8df06e880183e5adc3dc"
+    "passwordHash": "ba3e5d758d31b8b7cb5c9c9a0b0c48608f4d4f9a995b8df06e880183e5adc3dc",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "a29c08ce-499a-4054-a723-2d042bf029ef",
     "nome": "Donaldo",
     "email": "donaldo@gmail.com",
     "salt": "ab1c7edce65b3e388237c5576696e7ab",
-    "passwordHash": "8a5facca976e3f21f58da456b4351a397febcfb26aec27ff3ce1a1785cf79289"
+    "passwordHash": "8a5facca976e3f21f58da456b4351a397febcfb26aec27ff3ce1a1785cf79289",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "616b3ac9-88e5-4336-86ba-323c84d9cf4c",
     "nome": "Isabel Nunes",
     "email": "isabelnunesandrade039@gmail.com",
     "salt": "c56e9d12fbfe402240cd36fc8318f12a",
-    "passwordHash": "5f3ec7ab61ee97a66eff130ac6e3d750f33c554b5b70cf84937eb4f8b6aaa831"
+    "passwordHash": "5f3ec7ab61ee97a66eff130ac6e3d750f33c554b5b70cf84937eb4f8b6aaa831",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
   },
   {
     "id": "9b530c27-f97b-47a9-9134-2a619702c18e",
     "nome": "Dboy",
     "email": "dboy@gmail.com",
     "salt": "abcb8bae7f3d67c99a79e047f3c3a5f9",
-    "passwordHash": "821126e586ed40d1f91fd6d36d69713ddd98f316e433fd196c7a8f7ebfd0e40c"
+    "passwordHash": "821126e586ed40d1f91fd6d36d69713ddd98f316e433fd196c7a8f7ebfd0e40c",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
+  },
+  {
+    "id": "9f33764e-ce26-49cd-8a53-ebfe3b8a11ff",
+    "nome": "Tomás Paulo Mathe",
+    "email": "tmbandze@gmail.com",
+    "salt": "67b11ae9e0f4c7f6d8d9eaf01bbe7f88",
+    "passwordHash": "fdb06c1c65fda7c80a70b6e8e29d8599f109bb47f88a8abffcb34bb05f609b16",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
+  },
+  {
+    "id": "121ca8f7-5fac-418a-992f-33e0eeafae26",
+    "nome": "Estudante Teste",
+    "email": "estudante@teste.com",
+    "salt": "e0e5e7a0abcd9a67f31ec775f1a79372",
+    "passwordHash": "46d0f17def2e0477fc854cd00cb48192802d572f72a2312fefce4b1ebfcc1bf1",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
+  },
+  {
+    "id": "ffde0c74-0d3d-40c1-82d2-be3c891348f6",
+    "nome": "Teste Um",
+    "email": "teste1@bib.pt",
+    "salt": "c8d11387660343be27b32f3f88f9d919",
+    "passwordHash": "97e8d080ab16272cf6cb74d41648385383da461e8186c949d6c64238c41c6a18",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
+  },
+  {
+    "id": "5c9c9e59-e363-49e5-bd45-56a0af1199d9",
+    "nome": "Teste Dois",
+    "email": "teste2@bib.pt",
+    "salt": "8ce69b6ba405f750768bae830690eacb",
+    "passwordHash": "586576e6a51fe70eff7cd01c740addf44fa1940a01d3486dd367e94e6fe0ac0c",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0
+  },
+  {
+    "id": "d10dc872-3718-4feb-ba68-30ef7ec00664",
+    "nome": "TesteMulta",
+    "email": "multa@teste.pt",
+    "salt": "0586a60cfb7a738e00a3127b8a6f0581",
+    "passwordHash": "3b1fd19a138fe0eed7e7b634ff76f9b931605cc1b8f1f9c60abd37e1857c7289",
+    "bloqueado": false,
+    "avisos": 0,
+    "multaTotal": 0.0,
+    "multas": [
+      {
+        "tituloLivro": "Oxford",
+        "diasAtraso": 5,
+        "valor": 2.5,
+        "data": "2026-05-28"
+      }
+    ]
   }
 ]

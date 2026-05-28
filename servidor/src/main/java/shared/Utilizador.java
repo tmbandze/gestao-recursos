@@ -1,5 +1,8 @@
 package shared;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Utilizador {
     private String  id;
     private String  nome;
@@ -14,6 +17,10 @@ public class Utilizador {
     // Recuperação de password
     private String  tokenReset;
     private String  tokenExpira; // ISO-8601 data-hora
+
+    // Multas por atraso
+    private double          multaTotal = 0.0;    // total em euros em dívida
+    private List<RegistoMulta> multas;           // histórico de multas aplicadas
 
     public Utilizador() {}
 
@@ -47,4 +54,12 @@ public class Utilizador {
     // Setter para actualizar a password após reset
     public void    setPasswordHash(String h) { this.passwordHash = h; }
     public void    setSalt(String s)         { this.salt = s; }
+
+    // Multas
+    public double getMultaTotal()            { return multaTotal < 0 ? 0 : multaTotal; }
+    public void   setMultaTotal(double v)    { this.multaTotal = Math.max(0, v); }
+    public List<RegistoMulta> getMultas() {
+        if (multas == null) multas = new ArrayList<>();
+        return multas;
+    }
 }

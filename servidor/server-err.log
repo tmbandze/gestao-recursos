@@ -1,0 +1,21 @@
+[cover-migration] WARN org.apache.pdfbox.pdfparser.PDFParser -  COMMONS-LOGGING Error: Header doesn't contain versioninfo
+[CAPA] Falha na migração de 'Rona': Missing root object specification in trailer.
+[main] INFO io.javalin.Javalin - Starting Javalin ...
+[main] INFO org.eclipse.jetty.server.Server - jetty-11.0.20; built: 2024-01-29T21:04:22.394Z; git: 922f8dc188f7011e60d0361de585fd4ac4d63064; jvm 25.0.3+9-LTS-195
+[main] INFO org.eclipse.jetty.server.session.DefaultSessionIdManager - Session workerName=node0
+[main] INFO org.eclipse.jetty.server.handler.ContextHandler - Started o.e.j.s.ServletContextHandler@6497b078{/,null,AVAILABLE}
+[main] INFO org.eclipse.jetty.server.AbstractConnector - Started ServerConnector@78e117e3{HTTP/1.1, (http/1.1)}{0.0.0.0:8080}
+[main] INFO org.eclipse.jetty.server.Server - Started Server@635eaaf1{STARTING}[11.0.20,sto=0] @754ms
+[main] INFO io.javalin.Javalin - 
+       __                  ___           _____
+      / /___ __   ______ _/ (_)___      / ___/
+ __  / / __ `/ | / / __ `/ / / __ \    / __ \
+/ /_/ / /_/ /| |/ / /_/ / / / / / /   / /_/ /
+\____/\__,_/ |___/\__,_/_/_/_/ /_/    \____/
+
+       https://javalin.io/documentation
+
+[main] INFO io.javalin.Javalin - Javalin started in 345ms \o/
+[main] INFO io.javalin.Javalin - Static file handler added: StaticFileConfig(hostedPath=/, directory=/public, location=CLASSPATH, precompress=false, aliasCheck=null, headers={Cache-Control=max-age=0}, skipFileFunction=Function1<jakarta.servlet.http.HttpServletRequest, java.lang.Boolean>, mimeTypes={}). File system location: 'jar:file:/C:/dev/gestao-recursos/servidor/target/servidor.jar!/public'
+[main] INFO io.javalin.Javalin - Listening on http://localhost:8080/
+[main] INFO io.javalin.Javalin - You are running Javalin 6.1.6 (released May 28, 2024. Your Javalin version is 729 days old. Consider checking for a newer version.).

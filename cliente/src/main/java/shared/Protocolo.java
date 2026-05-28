@@ -49,6 +49,12 @@ public class Protocolo {
     public static final String ADMIN_APROVAR_EXEMPLAR = "ADMIN_APROVAR_EXEMPLAR";
     public static final String PENDENTES              = "PENDENTES";
 
+    // Multas por atraso
+    public static final String VER_MULTAS          = "VER_MULTAS";
+    public static final String ADMIN_LISTAR_MULTAS = "ADMIN_LISTAR_MULTAS";
+    public static final String ADMIN_PERDOAR_MULTA = "ADMIN_PERDOAR_MULTA";
+    public static final String MULTA               = "MULTA";
+
     // Avaliações e comentários
     public static final String AVALIAR           = "AVALIAR";
     public static final String LISTAR_AVALIACOES = "LISTAR_AVALIACOES";

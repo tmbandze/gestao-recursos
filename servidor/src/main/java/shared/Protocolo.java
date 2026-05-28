@@ -48,4 +48,10 @@ public class Protocolo {
     public static final String ADMIN_REJEITAR         = "ADMIN_REJEITAR";
     public static final String ADMIN_APROVAR_EXEMPLAR = "ADMIN_APROVAR_EXEMPLAR";
     public static final String PENDENTES              = "PENDENTES";
+
+    // Avaliações e comentários
+    public static final String AVALIAR           = "AVALIAR";
+    public static final String LISTAR_AVALIACOES = "LISTAR_AVALIACOES";
+    public static final String APAGAR_AVALIACAO  = "APAGAR_AVALIACAO";
+    public static final String AVALIACOES        = "AVALIACOES";
 }

@@ -8,6 +8,7 @@ let pesquisa  = '';
 let sse       = null;
 let pdfDoc    = null;
 let pdfPage   = 1;
+let _avaliando = {};   // livroId → número de estrelas seleccionadas
 
 // PDF.js worker
 if (typeof pdfjsLib !== 'undefined') {
@@ -225,6 +226,16 @@ function renderGrid() {
       : `<span class="badge ${disp ? 'b-green' : 'b-orange'}">
            ${disp ? '✓ disponível' : '⏳ requisitado'}
          </span>`;
+    // Badge de avaliação
+    const numAv  = (l.avaliacoes || []).length;
+    const avgAv  = numAv
+      ? l.avaliacoes.reduce((s, a) => s + a.estrelas, 0) / numAv
+      : 0;
+    const starBadge = numAv
+      ? `<span class="badge b-star" title="${avgAv.toFixed(1)} estrelas · ${numAv} avaliação(ões)">
+           <span class="star-gold">★</span> ${avgAv.toFixed(1)}
+         </span>`
+      : '';
     return `
     <article class="book ${disp ? 'av' : 'req'}"
              style="animation-delay:${i * 35}ms"
@@ -241,6 +252,7 @@ function renderGrid() {
       <div class="book-f">
         ${dispBadge}
         <div style="display:flex;gap:.35rem;align-items:center">
+          ${starBadge}
           ${l.temPdf ? '<span class="badge b-pdf">PDF</span>' : ''}
           <span class="badge b-muted cat-badge"
                 onclick="event.stopPropagation();filtrarCategoria('${esc(l.categoria)}')"
@@ -332,6 +344,17 @@ async function abrirDetalhes(id) {
       <span class="dlabel">Fila</span>
       <span class="dval">${filaHtml}</span>
     </div>`;
+
+  // ── Secção de avaliações ─────────────────────────────────────────────
+  document.getElementById('det-body').innerHTML +=
+    renderAvaliacoes(d.avaliacoes || [], id, d.mediaEstrelas || 0, d.numAvaliacoes || 0);
+
+  // Pré-seleccionar estrelas se já avaliou
+  const minhaAvExist = (d.avaliacoes || []).find(a => a.utilizador === nomeUser);
+  if (minhaAvExist) {
+    _avaliando[id] = minhaAvExist.estrelas;
+    actualizarEstrelasUI(id, minhaAvExist.estrelas);
+  }
 
   const acts = document.getElementById('det-acts');
   acts.innerHTML = '';
@@ -821,6 +844,145 @@ function copiarToken(token) {
     }
     toast('Selecciona o token manualmente: ' + token, 'inf');
   });
+}
+
+// ── Avaliações ───────────────────────────────────────────────────────────
+
+/**
+ * Gera o HTML da secção de avaliações do modal de detalhes.
+ */
+function renderAvaliacoes(avaliacoes, livroId, media, total) {
+  const minhaAv = avaliacoes.find(a => a.utilizador === nomeUser);
+
+  // Cabeçalho
+  let html = `<div class="mdivider"></div>
+  <div class="aval-section">
+    <div class="aval-header">
+      <span class="aval-sec-title">Avaliações</span>
+      ${total > 0
+        ? `<span class="aval-media-info">
+             <span class="star-gold">${renderStarsStatic(media)}</span>
+             <strong>${(+media).toFixed(1)}</strong>
+             <span style="color:var(--ink-d)">· ${total} avaliação(ões)</span>
+           </span>`
+        : ''}
+    </div>`;
+
+  // Formulário para avaliar
+  html += `<div class="aval-form">
+    <div class="aval-form-label">${minhaAv ? 'A tua avaliação' : 'Avaliar este livro'}</div>
+    <div class="star-row" id="star-row-${livroId}">`;
+  for (let i = 1; i <= 5; i++) {
+    html += `<button class="star-btn" data-star="${i}"
+               onclick="selecionarEstrela(${i},'${livroId}')"
+               onmouseover="hoverEstrela(${i},'${livroId}')"
+               onmouseout="unhoverEstrela('${livroId}')">★</button>`;
+  }
+  html += `</div>
+    <textarea id="aval-txt-${livroId}" class="aval-textarea"
+              placeholder="Comentário (opcional)…" rows="2">${esc(minhaAv?.comentario || '')}</textarea>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn btn-success btn-sm" onclick="submeterAvaliacao('${livroId}')">
+        ${minhaAv ? '✏ Actualizar' : '★ Avaliar'}
+      </button>
+      ${minhaAv
+        ? `<button class="btn btn-ghost btn-sm"
+                   onclick="removerAvaliacao('${livroId}','${esc(nomeUser)}')">
+             Remover
+           </button>`
+        : ''}
+    </div>
+  </div>`;
+
+  // Lista de avaliações existentes
+  if (avaliacoes.length) {
+    html += `<div class="aval-list">`;
+    for (const a of avaliacoes) {
+      const isMine = a.utilizador === nomeUser;
+      html += `<div class="aval-item${isMine ? ' mine' : ''}">
+        <div class="aval-item-head">
+          <span class="aval-user">${esc(a.utilizador)}</span>
+          <span class="aval-stars">${'★'.repeat(a.estrelas)}${'☆'.repeat(5 - a.estrelas)}</span>
+          <span class="aval-data">${formatDate(a.data)}</span>
+          ${isAdmin && !isMine
+            ? `<button class="btn btn-danger btn-sm"
+                       style="padding:.18rem .45rem;font-size:.7rem;margin-left:auto"
+                       onclick="removerAvaliacao('${livroId}','${esc(a.utilizador)}')">✕</button>`
+            : ''}
+        </div>
+        ${a.comentario ? `<div class="aval-coment">${esc(a.comentario)}</div>` : ''}
+      </div>`;
+    }
+    html += `</div>`;
+  } else {
+    html += `<p class="hist-empty">Nenhuma avaliação ainda — sê o primeiro!</p>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+/** Renderiza estrelas estáticas (média visual). */
+function renderStarsStatic(media) {
+  let s = '';
+  for (let i = 1; i <= 5; i++) s += i <= Math.round(media) ? '★' : '☆';
+  return s;
+}
+
+/** Actualiza visualmente as estrelas do formulário. */
+function actualizarEstrelasUI(livroId, n) {
+  const row = document.getElementById('star-row-' + livroId);
+  if (!row) return;
+  row.querySelectorAll('.star-btn').forEach((btn, i) => {
+    btn.classList.toggle('active',  i < n);
+    btn.classList.remove('hovered');
+  });
+}
+
+function selecionarEstrela(n, livroId) {
+  _avaliando[livroId] = n;
+  actualizarEstrelasUI(livroId, n);
+}
+
+function hoverEstrela(n, livroId) {
+  const row = document.getElementById('star-row-' + livroId);
+  if (!row) return;
+  row.querySelectorAll('.star-btn').forEach((btn, i) => {
+    btn.classList.toggle('hovered', i < n);
+  });
+}
+
+function unhoverEstrela(livroId) {
+  const sel = _avaliando[livroId] || 0;
+  actualizarEstrelasUI(livroId, sel);
+}
+
+async function submeterAvaliacao(livroId) {
+  const estrelas = _avaliando[livroId];
+  if (!estrelas) { toast('Selecciona pelo menos 1 estrela ★', 'err'); return; }
+  const comentario = document.getElementById('aval-txt-' + livroId)?.value?.trim() || '';
+  const r = await api(`/api/livros/${livroId}/avaliar`, 'POST', { estrelas, comentario });
+  if (r.erro) { toast(r.erro, 'err'); return; }
+  toast(r.mensagem || 'Avaliação registada!', 'ok');
+  delete _avaliando[livroId];
+  abrirDetalhes(livroId);   // recarrega modal com avaliações actualizadas
+  carregarLivros();          // actualiza badge de estrelas no grid
+}
+
+async function removerAvaliacao(livroId, utilizador) {
+  const msg = utilizador === nomeUser
+    ? 'Remover a tua avaliação?'
+    : `Remover avaliação de "${utilizador}"?`;
+  if (!confirm(msg)) return;
+  const r = await api(
+    `/api/livros/${livroId}/avaliacoes/${encodeURIComponent(utilizador)}`,
+    'DELETE'
+  );
+  if (r.erro) { toast(r.erro, 'err'); return; }
+  toast(r.mensagem || 'Avaliação removida.', 'ok');
+  delete _avaliando[livroId];
+  abrirDetalhes(livroId);
+  carregarLivros();
 }
 
 // ── Enter keys ───────────────────────────────────────────────────────────

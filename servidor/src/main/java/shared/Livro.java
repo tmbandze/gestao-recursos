@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class Livro {
     private String id;
@@ -82,6 +83,21 @@ public class Livro {
     private String  uploadPor;
     private String  dataRequisicao;
     private String  prazoDevolvacao;
+
+    // ── Avaliações ───────────────────────────────────────────────────────
+    private List<Avaliacao> avaliacoes;
+
+    public List<Avaliacao> getAvaliacoes() {
+        if (avaliacoes == null) avaliacoes = new ArrayList<>();
+        return avaliacoes;
+    }
+
+    /** Média das estrelas (0.0 se não há avaliações). */
+    public double mediaEstrelas() {
+        List<Avaliacao> a = getAvaliacoes();
+        if (a.isEmpty()) return 0.0;
+        return a.stream().mapToInt(Avaliacao::getEstrelas).average().orElse(0.0);
+    }
 
     // Moderação de conteúdo
     private boolean flagAdmin       = false;   // true = conteúdo sinalizado

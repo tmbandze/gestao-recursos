@@ -4,6 +4,7 @@ import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import shared.Avaliacao;
 import shared.EstadoLivro;
 import shared.Livro;
 
@@ -89,6 +90,11 @@ public class GestorLivros {
         m.put("filaEspera",        l.getFilaEspera());
         m.put("temPdf",            l.isTemPdf());
         m.put("prazoDevolvacao",   l.getPrazoDevolvacao());          // compat
+        // Avaliações
+        m.put("avaliacoes",        l.getAvaliacoes());
+        double media = l.mediaEstrelas();
+        m.put("mediaEstrelas",     Math.round(media * 10.0) / 10.0);
+        m.put("numAvaliacoes",     l.getAvaliacoes().size());
         return m;
     }
 
@@ -445,6 +451,60 @@ public class GestorLivros {
             ImageIO.write(img, "JPEG", capaFile);
         }
     }
+
+    // ── Avaliações ────────────────────────────────────────────────────────
+
+    /**
+     * Regista ou actualiza a avaliação de um utilizador num livro.
+     * Cada utilizador tem apenas uma avaliação por livro — nova submissão substitui a anterior.
+     */
+    public synchronized Map<String, Object> avaliar(String id, String utilizador, int estrelas, String comentario) {
+        Livro livro = buscar(id);
+        if (livro == null)      return Map.of("erro", "Livro não encontrado");
+        if (livro.isPendente()) return Map.of("erro", "Livro não disponível");
+        if (estrelas < 1 || estrelas > 5)
+            return Map.of("erro", "Classificação inválida — escolhe entre 1 e 5 estrelas");
+
+        // Remove avaliação anterior (se existir) e adiciona a nova
+        livro.getAvaliacoes().removeIf(a -> a.getUtilizador().equals(utilizador));
+        livro.getAvaliacoes().add(new Avaliacao(utilizador, estrelas, comentario));
+        baseDados.guardar(livros);
+
+        double media = livro.mediaEstrelas();
+        return Map.of(
+            "ok",       true,
+            "mensagem", "Avaliação registada!",
+            "media",    Math.round(media * 10.0) / 10.0,
+            "total",    livro.getAvaliacoes().size()
+        );
+    }
+
+    /** Devolve todas as avaliações de um livro com média calculada. */
+    public synchronized Map<String, Object> listarAvaliacoes(String id) {
+        Livro livro = buscar(id);
+        if (livro == null) return Map.of("erro", "Livro não encontrado");
+        double media = livro.mediaEstrelas();
+        return Map.of(
+            "avaliacoes", livro.getAvaliacoes(),
+            "media",      Math.round(media * 10.0) / 10.0,
+            "total",      livro.getAvaliacoes().size()
+        );
+    }
+
+    /**
+     * Remove a avaliação de um utilizador num livro.
+     * Pode ser chamado pelo próprio utilizador ou pelo admin.
+     */
+    public synchronized Map<String, Object> apagarAvaliacao(String id, String utilizador) {
+        Livro livro = buscar(id);
+        if (livro == null) return Map.of("erro", "Livro não encontrado");
+        boolean removed = livro.getAvaliacoes().removeIf(a -> a.getUtilizador().equals(utilizador));
+        if (!removed) return Map.of("erro", "Avaliação não encontrada");
+        baseDados.guardar(livros);
+        return Map.of("ok", true, "mensagem", "Avaliação removida");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
 
     private Livro buscar(String id) {
         return livros.stream().filter(l -> l.getId().equals(id)).findFirst().orElse(null);

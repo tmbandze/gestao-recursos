@@ -290,6 +290,59 @@ public class GestorTCP {
                             enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
                         }
                     }
+                    // ── Avaliações ────────────────────────────────────────
+                    case Protocolo.AVALIAR -> {
+                        if (nome == null) { enviar(out, Protocolo.ERRO + "|Não autenticado"); break; }
+                        if (p.length < 3) { enviar(out, Protocolo.ERRO + "|Uso: AVALIAR|id|estrelas[|comentario]"); break; }
+                        int estrelas;
+                        try { estrelas = Integer.parseInt(p[2].trim()); }
+                        catch (NumberFormatException e) { enviar(out, Protocolo.ERRO + "|Estrelas deve ser 1-5"); break; }
+                        String comentAv = p.length > 3 ? p[3].trim() : "";
+                        var r = gestorLivros.avaliar(p[1].trim(), nome, estrelas, comentAv);
+                        if (r.containsKey("ok")) {
+                            logger.registar("AVALIAR_TCP", nome, p[1] + " " + estrelas + "★");
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem")
+                                + " (média: " + r.get("media") + "★, " + r.get("total") + " avaliação(ões))");
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
+                    }
+                    case Protocolo.LISTAR_AVALIACOES -> {
+                        if (nome == null) { enviar(out, Protocolo.ERRO + "|Não autenticado"); break; }
+                        if (p.length < 2) { enviar(out, Protocolo.ERRO + "|ID em falta"); break; }
+                        var r = gestorLivros.listarAvaliacoes(p[1].trim());
+                        if (r.containsKey("erro")) { enviar(out, Protocolo.ERRO + "|" + r.get("erro")); break; }
+                        @SuppressWarnings("unchecked")
+                        var avalList = (java.util.List<shared.Avaliacao>) r.get("avaliacoes");
+                        StringBuilder sbAv = new StringBuilder(Protocolo.AVALIACOES + "|");
+                        sbAv.append("media:").append(r.get("media"))
+                            .append("|total:").append(r.get("total")).append("|");
+                        for (int i = 0; i < avalList.size(); i++) {
+                            if (i > 0) sbAv.append(";");
+                            shared.Avaliacao a = avalList.get(i);
+                            sbAv.append(a.getUtilizador()).append("~")
+                                .append(a.getEstrelas()).append("~")
+                                .append(a.getComentario() != null ? a.getComentario().replace("~", " ") : "")
+                                .append("~").append(a.getData() != null ? a.getData() : "");
+                        }
+                        enviar(out, sbAv.toString());
+                    }
+                    case Protocolo.APAGAR_AVALIACAO -> {
+                        if (nome == null) { enviar(out, Protocolo.ERRO + "|Não autenticado"); break; }
+                        if (p.length < 3) { enviar(out, Protocolo.ERRO + "|Uso: APAGAR_AVALIACAO|idLivro|utilizador"); break; }
+                        String alvo = p[2].trim();
+                        if (!isAdmin(nome) && !nome.equals(alvo)) {
+                            enviar(out, Protocolo.ERRO + "|Só podes remover a tua própria avaliação"); break;
+                        }
+                        var r = gestorLivros.apagarAvaliacao(p[1].trim(), alvo);
+                        if (r.containsKey("ok")) {
+                            logger.registar("APAGAR_AVAL_TCP", nome, alvo);
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem"));
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
+                    }
+
                     case Protocolo.ADMIN_APROVAR_EXEMPLAR -> {
                         if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
                         String idPend = p.length > 1 ? p[1].trim() : "";

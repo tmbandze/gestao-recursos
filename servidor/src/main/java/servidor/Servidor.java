@@ -184,6 +184,39 @@ public class Servidor {
             ctx.json(r);
         });
 
+        // ── Avaliações ────────────────────────────────────────────────
+        app.get("/api/livros/{id}/avaliacoes", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            ctx.json(gestorLivros.listarAvaliacoes(ctx.pathParam("id")));
+        });
+
+        app.post("/api/livros/{id}/avaliar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            int estrelas = b.containsKey("estrelas")
+                ? ((Number) b.get("estrelas")).intValue() : 0;
+            String comentario = str(b, "comentario");
+            String id = ctx.pathParam("id");
+            var r = gestorLivros.avaliar(id, nome, estrelas, comentario);
+            if (r.containsKey("ok"))
+                logger.registar("AVALIAR", nome, id + " " + estrelas + "★");
+            ctx.json(r);
+        });
+
+        // Utilizador remove a própria avaliação; admin remove qualquer uma
+        app.delete("/api/livros/{id}/avaliacoes/{utilizador}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            String alvo = ctx.pathParam("utilizador");
+            if (!nome.equalsIgnoreCase("admin") && !nome.equals(alvo)) {
+                ctx.status(403).json(Map.of("erro", "Só podes remover a tua própria avaliação"));
+                return;
+            }
+            var r = gestorLivros.apagarAvaliacao(ctx.pathParam("id"), alvo);
+            if (r.containsKey("ok")) logger.registar("APAGAR_AVAL", nome, alvo);
+            ctx.json(r);
+        });
+
         // ── Admin / relatórios ────────────────────────────────────────
         app.get("/api/relatorio", ctx ->
             ctx.json(gestorLivros.relatorio()));

@@ -856,6 +856,114 @@ main {
   border-top-color: #fff;
 }
 
+/* ─── AVALIAÇÕES ─────────────────────────────────────────────────── */
+.aval-section { margin-top: 1.25rem; }
+
+.aval-header {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  margin-bottom: .75rem;
+}
+
+.aval-sec-title {
+  font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-d);
+}
+
+.aval-media-info {
+  font-size: .82rem; color: var(--ink-m);
+  display: flex; align-items: center; gap: .3rem;
+}
+
+.star-gold { color: #e8a000; }
+
+/* Formulário de submissão */
+.aval-form {
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rs);
+  padding: .75rem 1rem;
+  margin-bottom: .875rem;
+}
+
+.aval-form-label {
+  font-size: .68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-m); margin-bottom: .4rem;
+}
+
+.star-row { display: flex; gap: .15rem; margin-bottom: .55rem; }
+
+.star-btn {
+  background: none; border: none;
+  font-size: 1.5rem; cursor: pointer;
+  color: var(--border-d);
+  padding: 0 .08rem; line-height: 1;
+  transition: color .1s, transform .08s;
+}
+
+.star-btn.active  { color: #e8a000; }
+.star-btn.hovered { color: #f0b820; }
+.star-btn:active  { transform: scale(.88); }
+
+.aval-textarea {
+  width: 100%;
+  background: var(--paper);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rs);
+  color: var(--ink);
+  font-family: var(--fb); font-size: .875rem;
+  padding: .5rem .75rem;
+  outline: none; resize: vertical;
+  transition: border-color .15s;
+  margin-bottom: .5rem;
+}
+.aval-textarea:focus { border-color: var(--green); }
+
+/* Lista de avaliações existentes */
+.aval-list { display: flex; flex-direction: column; gap: .5rem; }
+
+.aval-item {
+  background: var(--paper);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rs);
+  padding: .65rem .9rem;
+}
+
+.aval-item.mine {
+  border-color: var(--green-br);
+  background: var(--green-bg);
+}
+
+.aval-item-head {
+  display: flex; align-items: center;
+  gap: .45rem; margin-bottom: .2rem; flex-wrap: wrap;
+}
+
+.aval-user { font-weight: 600; font-size: .82rem; }
+
+.aval-stars {
+  color: #e8a000; font-size: .85rem;
+  letter-spacing: .04em;
+}
+
+.aval-data {
+  font-size: .7rem; color: var(--ink-d); margin-left: auto;
+}
+
+.aval-coment {
+  font-size: .84rem; color: var(--ink-m);
+  line-height: 1.45; margin-top: .1rem;
+}
+
+/* Badge de estrelas no card */
+.b-star {
+  background: #fff8e1; color: #a06800;
+  border-color: #f5d87c;
+  font-family: var(--fb) !important;
+}
+
 /* ─── RESPONSIVE ─────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   main { padding: 1rem; }

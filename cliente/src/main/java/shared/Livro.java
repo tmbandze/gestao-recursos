@@ -3,6 +3,7 @@ package shared;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class Livro {
     private String id;
@@ -69,6 +70,20 @@ public class Livro {
     public List<String> getFilaEspera() { return filaEspera != null ? filaEspera : new ArrayList<>(); }
     public void setFilaEspera(List<String> filaEspera) { this.filaEspera = filaEspera; }
     public String getDataInsercao() { return dataInsercao; }
+
+    // ── Avaliações ───────────────────────────────────────────────────────
+    private List<Avaliacao> avaliacoes;
+
+    public List<Avaliacao> getAvaliacoes() {
+        if (avaliacoes == null) avaliacoes = new ArrayList<>();
+        return avaliacoes;
+    }
+
+    public double mediaEstrelas() {
+        List<Avaliacao> a = getAvaliacoes();
+        if (a.isEmpty()) return 0.0;
+        return a.stream().mapToInt(Avaliacao::getEstrelas).average().orElse(0.0);
+    }
 
     // Aprovação (usada pelo painel admin)
     private boolean pendente       = false;

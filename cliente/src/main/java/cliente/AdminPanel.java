@@ -29,6 +29,9 @@ public class AdminPanel {
     // ── Separador: Conteúdo Suspeito ─────────────────────────────────────
     private final TableView<String[]> tabelaSuspeit = new TableView<>();
 
+    // ── Separador: Livros Pendentes ──────────────────────────────────────
+    private final TableView<String[]> tabelaPendentes = new TableView<>();
+
     // ── Separador: Log ───────────────────────────────────────────────────
     private final TextArea            areaLog       = new TextArea();
 
@@ -71,6 +74,11 @@ public class AdminPanel {
         configurarTabelaLivros();
         tabLivros.setContent(tabelaLivros);
 
+        // ── Tab: Livros Pendentes ───────────────────────────────────────
+        Tab tabPendentes = new Tab("⏳ Pendentes");
+        tabPendentes.setClosable(false);
+        tabPendentes.setContent(construirPainelPendentes());
+
         // ── Tab: Conteúdo Suspeito ──────────────────────────────────────
         Tab tabSuspeit = new Tab("🚨 Conteúdo Suspeito");
         tabSuspeit.setClosable(false);
@@ -83,7 +91,7 @@ public class AdminPanel {
         areaLog.setWrapText(false);
         tabLog.setContent(areaLog);
 
-        TabPane tabs = new TabPane(tabUsers, tabLivros, tabSuspeit, tabLog);
+        TabPane tabs = new TabPane(tabUsers, tabLivros, tabPendentes, tabSuspeit, tabLog);
         VBox.setVgrow(tabs, Priority.ALWAYS);
 
         VBox raiz = new VBox(cabecalho, tabs);
@@ -167,6 +175,123 @@ public class AdminPanel {
         VBox painel = new VBox(tabelaUsers, botoesUsers);
         VBox.setVgrow(tabelaUsers, Priority.ALWAYS);
         return painel;
+    }
+
+    // ── Painel de livros pendentes ───────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    private VBox construirPainelPendentes() {
+        tabelaPendentes.getStyleClass().add("book-table");
+
+        TableColumn<String[], String> colTitulo = new TableColumn<>("TÍTULO");
+        colTitulo.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[1]));
+        colTitulo.setPrefWidth(190);
+
+        TableColumn<String[], String> colAutor = new TableColumn<>("AUTOR");
+        colAutor.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[2]));
+        colAutor.setPrefWidth(130);
+
+        TableColumn<String[], String> colUpload = new TableColumn<>("ENVIADO POR");
+        colUpload.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[3]));
+        colUpload.setPrefWidth(100);
+
+        TableColumn<String[], String> colRelatorio = new TableColumn<>("RELATÓRIO DE SCAN");
+        colRelatorio.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[4]));
+        colRelatorio.setPrefWidth(270);
+        colRelatorio.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String s, boolean empty) {
+                super.updateItem(s, empty); setText(null);
+                if (empty || s == null) { setGraphic(null); return; }
+                Label lbl = new Label(s);
+                lbl.setWrapText(true);
+                boolean suspeito = s.contains("SUSPEITO") || s.contains("⚠");
+                lbl.setStyle(suspeito ? "-fx-text-fill:#F06060;" : "-fx-text-fill:#3DDB7E;");
+                setGraphic(lbl);
+            }
+        });
+
+        TableColumn<String[], String> colFlag = new TableColumn<>("ESTADO");
+        colFlag.setCellValueFactory(d -> new SimpleStringProperty(d.getValue()[5]));
+        colFlag.setPrefWidth(90);
+        colFlag.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String s, boolean empty) {
+                super.updateItem(s, empty); setText(null);
+                if (empty || s == null) { setGraphic(null); return; }
+                boolean sus = "SUSPEITO".equals(s);
+                Label lbl = new Label(sus ? "🚨 Suspeito" : "✓ OK");
+                lbl.setStyle(sus ? "-fx-text-fill:#F06060;-fx-font-weight:bold;" : "-fx-text-fill:#3DDB7E;");
+                setGraphic(lbl);
+            }
+        });
+
+        tabelaPendentes.getColumns().addAll(colTitulo, colAutor, colUpload, colRelatorio, colFlag);
+        tabelaPendentes.setPlaceholder(new Label("✓  Nenhum livro aguarda aprovação."));
+
+        Button btnAprovar   = new Button("✅  Aprovar (novo livro)");
+        Button btnExemplar  = new Button("➕  Aprovar como Exemplar");
+        Button btnRejeitar  = new Button("❌  Rejeitar");
+
+        btnAprovar.getStyleClass().add("btn-success");
+        btnExemplar.getStyleClass().add("btn-ghost");
+        btnRejeitar.getStyleClass().add("btn-danger");
+
+        btnAprovar.setOnAction(e  -> acaoPendente("aprovar"));
+        btnExemplar.setOnAction(e -> acaoPendente("exemplar"));
+        btnRejeitar.setOnAction(e -> acaoPendente("rejeitar"));
+
+        Label info = new Label("Reveja o relatório de scan antes de aprovar ou rejeitar.");
+        info.setStyle("-fx-text-fill:#888;-fx-font-size:11;");
+        info.setWrapText(true);
+
+        HBox botoes = new HBox(8, btnAprovar, btnExemplar, btnRejeitar);
+        botoes.setPadding(new Insets(6, 8, 6, 8));
+
+        VBox painel = new VBox(tabelaPendentes, botoes, info);
+        VBox.setVgrow(tabelaPendentes, Priority.ALWAYS);
+        VBox.setMargin(info, new Insets(4, 8, 6, 8));
+        return painel;
+    }
+
+    private void acaoPendente(String acao) {
+        String[] sel = tabelaPendentes.getSelectionModel().getSelectedItem();
+        if (sel == null) { mostrarAlerta("Selecciona um livro primeiro."); return; }
+        String id     = sel[0];
+        String titulo = sel[1];
+
+        if ("aprovar".equals(acao)) {
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Aprovar e publicar como novo livro:\n\"" + titulo + "\"?", ButtonType.YES, ButtonType.NO);
+            confirm.setTitle("Aprovar Livro");
+            confirm.showAndWait().filter(bt -> bt == ButtonType.YES).ifPresent(bt -> {
+                String r = cliente.enviar(Protocolo.ADMIN_APROVAR + "|" + id);
+                mostrarAlerta(extrairMsg(r));
+                carregarPendentes();
+            });
+        } else if ("exemplar".equals(acao)) {
+            // Pedir o ID do livro existente ao qual adicionar como exemplar
+            TextInputDialog dlg = new TextInputDialog("");
+            dlg.setTitle("Aprovar como Exemplar");
+            dlg.setHeaderText("Adicionar \"" + titulo + "\" como exemplar de livro existente");
+            dlg.setContentText("ID do livro existente (col. Livros do Sistema):");
+            Optional<String> res = dlg.showAndWait();
+            res.filter(idExis -> !idExis.isBlank()).ifPresent(idExis -> {
+                String r = cliente.enviar(Protocolo.ADMIN_APROVAR_EXEMPLAR + "|" + id + "|" + idExis.trim());
+                mostrarAlerta(extrairMsg(r));
+                carregarPendentes();
+                carregarLivros();
+            });
+        } else {
+            TextInputDialog dlg = new TextInputDialog("");
+            dlg.setTitle("Rejeitar Livro");
+            dlg.setHeaderText("Rejeitar: \"" + titulo + "\"");
+            dlg.setContentText("Motivo (opcional):");
+            Optional<String> res = dlg.showAndWait();
+            res.ifPresent(motivo -> {
+                String r = cliente.enviar(Protocolo.ADMIN_REJEITAR + "|" + id + "|" + motivo);
+                mostrarAlerta(extrairMsg(r));
+                carregarPendentes();
+            });
+        }
     }
 
     // ── Painel de conteúdo suspeito ──────────────────────────────────────
@@ -273,6 +398,7 @@ public class AdminPanel {
         cliente.drenaFila();
         carregarUtilizadores();
         carregarLivros();
+        carregarPendentes();
         carregarSuspeitos();
         carregarLog();
     }
@@ -313,6 +439,19 @@ public class AdminPanel {
         for (String entrada : secoes[1].split("\\|")) {
             String[] c = entrada.split("~", 5);
             if (c.length == 5) tabelaLivros.getItems().add(c);
+        }
+    }
+
+    private void carregarPendentes() {
+        String resp = cliente.enviar(Protocolo.ADMIN_PENDENTES);
+        tabelaPendentes.getItems().clear();
+        if (resp == null || !resp.startsWith(Protocolo.PENDENTES + "|")) return;
+        String dados = resp.substring(Protocolo.PENDENTES.length() + 1);
+        if (dados.isEmpty()) return;
+        for (String entrada : dados.split(";")) {
+            String[] c = entrada.split("~", 6);
+            if (c.length == 6) tabelaPendentes.getItems().add(c);
+            // c: [id, titulo, autor, uploadPor, relatorioScan, flagStatus]
         }
     }
 

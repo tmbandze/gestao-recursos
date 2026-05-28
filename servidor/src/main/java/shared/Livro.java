@@ -3,6 +3,7 @@ package shared;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class Livro {
     private String id;
@@ -35,8 +36,46 @@ public class Livro {
         return id + "," + titulo + "," + autor + "," + categoria + "," + estado.name();
     }
 
+    // ── Exemplares (múltiplas cópias físicas) ────────────────────────────
+    private int                 totalExemplares   = 1;
+    private List<String>        estudantesActuais;    // todos os detentores actuais
+    private Map<String, String> prazosEstudantes;     // estudante → prazo
+
     public boolean isDisponivel() {
-        return estado == EstadoLivro.DISPONIVEL;
+        return getEstudantesActuais().size() < totalExemplares;
+    }
+
+    /** Número de cópias ainda disponíveis para requisição. */
+    public int copiasDisponiveis() {
+        return getTotalExemplares() - getEstudantesActuais().size();
+    }
+
+    /** Nunca devolve menos de 1 — protege contra Gson que ignora o inicializador. */
+    public int  getTotalExemplares()     { return totalExemplares < 1 ? 1 : totalExemplares; }
+    public void setTotalExemplares(int n){ this.totalExemplares = Math.max(1, n); }
+
+    public List<String> getEstudantesActuais() {
+        if (estudantesActuais == null) estudantesActuais = new ArrayList<>();
+        return estudantesActuais;
+    }
+
+    public Map<String, String> getPrazosEstudantes() {
+        if (prazosEstudantes == null) prazosEstudantes = new java.util.LinkedHashMap<>();
+        return prazosEstudantes;
+    }
+
+    /**
+     * Migração one-shot: converte o campo legado {@code estudanteActual} (String)
+     * para a nova lista {@code estudantesActuais}. Seguro chamar múltiplas vezes.
+     */
+    public void migrarExemplaresAntigos() {
+        if (totalExemplares < 1) totalExemplares = 1;   // corrige Gson que ignora inicializador
+        if (estudantesActuais == null) estudantesActuais = new ArrayList<>();
+        if (prazosEstudantes  == null) prazosEstudantes  = new java.util.LinkedHashMap<>();
+        if (estudantesActuais.isEmpty() && estudanteActual != null) {
+            estudantesActuais.add(estudanteActual);
+            if (prazoDevolvacao != null) prazosEstudantes.put(estudanteActual, prazoDevolvacao);
+        }
     }
 
     private boolean temPdf          = false;
@@ -47,6 +86,10 @@ public class Livro {
     // Moderação de conteúdo
     private boolean flagAdmin       = false;   // true = conteúdo sinalizado
     private String  motivoSuspeicao;           // motivo do flag
+
+    // Aprovação pelo administrador
+    private boolean pendente        = false;   // true = aguarda aprovação do admin
+    private String  relatorioScan;             // resumo da análise de conteúdo
 
     public String getId() { return id; }
     public String getTitulo() { return titulo; }
@@ -73,4 +116,10 @@ public class Livro {
     public void    setFlagAdmin(boolean f)          { this.flagAdmin = f; }
     public String  getMotivoSuspeicao()             { return motivoSuspeicao; }
     public void    setMotivoSuspeicao(String m)     { this.motivoSuspeicao = m; }
+
+    // Aprovação
+    public boolean isPendente()                     { return pendente; }
+    public void    setPendente(boolean p)           { this.pendente = p; }
+    public String  getRelatorioScan()               { return relatorioScan; }
+    public void    setRelatorioScan(String r)       { this.relatorioScan = r; }
 }

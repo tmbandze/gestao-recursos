@@ -35,8 +35,27 @@ public class Livro {
         return id + "," + titulo + "," + autor + "," + categoria + "," + estado.name();
     }
 
+    // ── Exemplares ───────────────────────────────────────────────────────
+    private int                 totalExemplares   = 1;
+    private List<String>        estudantesActuais;
+    private java.util.Map<String, String> prazosEstudantes;
+
     public boolean isDisponivel() {
-        return estado == EstadoLivro.DISPONIVEL;
+        return getEstudantesActuais().size() < totalExemplares;
+    }
+
+    public int copiasDisponiveis()       { return getTotalExemplares() - getEstudantesActuais().size(); }
+    public int getTotalExemplares()      { return totalExemplares < 1 ? 1 : totalExemplares; }
+    public void setTotalExemplares(int n){ this.totalExemplares = Math.max(1, n); }
+
+    public List<String> getEstudantesActuais() {
+        if (estudantesActuais == null) estudantesActuais = new ArrayList<>();
+        return estudantesActuais;
+    }
+
+    public java.util.Map<String, String> getPrazosEstudantes() {
+        if (prazosEstudantes == null) prazosEstudantes = new java.util.LinkedHashMap<>();
+        return prazosEstudantes;
     }
 
     public String getId() { return id; }
@@ -50,4 +69,12 @@ public class Livro {
     public List<String> getFilaEspera() { return filaEspera != null ? filaEspera : new ArrayList<>(); }
     public void setFilaEspera(List<String> filaEspera) { this.filaEspera = filaEspera; }
     public String getDataInsercao() { return dataInsercao; }
+
+    // Aprovação (usada pelo painel admin)
+    private boolean pendente       = false;
+    private String  relatorioScan;
+    public boolean isPendente()               { return pendente; }
+    public void    setPendente(boolean p)     { this.pendente = p; }
+    public String  getRelatorioScan()         { return relatorioScan; }
+    public void    setRelatorioScan(String r) { this.relatorioScan = r; }
 }

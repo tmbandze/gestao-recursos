@@ -158,6 +158,16 @@ public class Servidor {
             ctx.result(new FileInputStream(pdf));
         });
 
+        // Capa do livro — público, sem autenticação (para carregar em <img>)
+        app.get("/api/livros/{id}/capa", ctx -> {
+            String id   = ctx.pathParam("id");
+            File   capa = gestorLivros.getCoverFile(id);
+            if (capa == null) { ctx.status(404).result(""); return; }
+            ctx.contentType("image/jpeg");
+            ctx.header("Cache-Control", "public, max-age=86400");
+            ctx.result(new FileInputStream(capa));
+        });
+
         app.post("/api/livros/{id}/requisitar", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
             String id   = ctx.pathParam("id");
@@ -178,8 +188,14 @@ public class Servidor {
         app.get("/api/relatorio", ctx ->
             ctx.json(gestorLivros.relatorio()));
 
-        app.get("/api/historico", ctx ->
-            ctx.json(Map.of("log", logger.lerUltimas(50))));
+        app.get("/api/historico", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) {
+                ctx.status(403).json(Map.of("erro", "Acesso restrito ao administrador"));
+                return;
+            }
+            ctx.json(Map.of("log", logger.lerUltimas(50)));
+        });
 
         app.get("/api/historico/pessoal", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
@@ -195,11 +211,12 @@ public class Servidor {
         app.get("/api/admin/utilizadores", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
             if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
-            var conectados = new java.util.HashSet<>(sessoes.values());
+            var conectadosHTTP = new java.util.HashSet<>(sessoes.values());
             var lista = gestorUtilizadores.listarNomes().stream().map(n -> {
                 var m = new java.util.LinkedHashMap<String, Object>();
                 m.put("nome", n);
-                m.put("conectado", conectados.contains(n));
+                // Online = sessão HTTP (web) OU ligação TCP activa (cliente JavaFX)
+                m.put("conectado", conectadosHTTP.contains(n) || gestorTCP.isConectado(n));
                 return m;
             }).collect(java.util.stream.Collectors.toList());
             ctx.json(Map.of("utilizadores", lista));
@@ -228,7 +245,16 @@ public class Servidor {
             String email = str(b, "email");
             var r = gestorUtilizadores.pedirRecuperacao(email);
             if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
+            // Notificar o admin em tempo real via SSE
+            SseClient adminSse = sseClientes.get("admin");
+            if (adminSse != null) adminSse.sendEvent("recuperacao_update", email);
             ctx.json(r);
+        });
+
+        app.get("/api/admin/recuperacoes", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            ctx.json(Map.of("recuperacoes", gestorUtilizadores.listarRecuperacoesPendentes()));
         });
 
         app.post("/api/reset-password", ctx -> {
@@ -280,6 +306,69 @@ public class Servidor {
             ctx.json(Map.of("ok", true));
         });
 
+        // ── Aprovação de livros pendentes ─────────────────────────────
+        app.get("/api/admin/pendentes", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            var pendentes = gestorLivros.listarPendentes().stream().map(l -> {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("id",             l.getId());
+                m.put("titulo",         l.getTitulo());
+                m.put("autor",          l.getAutor());
+                m.put("categoria",      l.getCategoria());
+                m.put("uploadPor",      l.getUploadPor());
+                m.put("relatorioScan",  l.getRelatorioScan());
+                m.put("flagAdmin",      l.isFlagAdmin());
+                m.put("motivoSuspeicao",l.getMotivoSuspeicao());
+                m.put("temPdf",         l.isTemPdf());
+                // Detecção de duplicado: livro aprovado com mesmo título+autor
+                var similar = gestorLivros.buscarSimilar(l.getTitulo(), l.getAutor(), l.getId());
+                if (similar != null) {
+                    m.put("duplicadoId",        similar.getId());
+                    m.put("duplicadoTitulo",    similar.getTitulo());
+                    m.put("duplicadoExemplares",similar.getTotalExemplares());
+                }
+                return m;
+            }).collect(java.util.stream.Collectors.toList());
+            ctx.json(Map.of("pendentes", pendentes));
+        });
+
+        app.post("/api/admin/livros/{idPendente}/aprovar-como-exemplar/{idExistente}", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            var r = gestorLivros.adicionarExemplar(ctx.pathParam("idPendente"), ctx.pathParam("idExistente"));
+            if (r.containsKey("ok"))
+                logger.registar("EXEMPLAR", nome, ctx.pathParam("idPendente") + "→" + ctx.pathParam("idExistente"));
+            ctx.json(r);
+        });
+
+        app.post("/api/admin/livros/{id}/aprovar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String id = ctx.pathParam("id");
+            var r = gestorLivros.aprovarLivro(id);
+            if (r.containsKey("ok")) {
+                logger.registar("APROVAR", nome, id);
+                notificarTodos("pendente_update", "aprovado", "");
+            }
+            ctx.json(r);
+        });
+
+        app.post("/api/admin/livros/{id}/rejeitar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            String id = ctx.pathParam("id");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String motivo = str(b, "motivo");
+            var r = gestorLivros.rejeitarLivro(id, motivo);
+            if (r.containsKey("ok")) {
+                logger.registar("REJEITAR", nome, id + (motivo.isBlank() ? "" : " (" + motivo + ")"));
+                notificarTodos("pendente_update", "rejeitado", "");
+            }
+            ctx.json(r);
+        });
+
         app.start(PORTA);
         System.out.println("[INFO] Servidor web iniciado em http://0.0.0.0:" + PORTA);
         System.out.println("[INFO] Partilha com colegas: http://<SEU_IP>:" + PORTA);
@@ -312,6 +401,7 @@ public class Servidor {
     }
 
     public static void main(String[] args) {
+        System.setProperty("java.awt.headless", "true");  // PDFBox rendering sem display
         new Servidor().iniciar();
     }
 }

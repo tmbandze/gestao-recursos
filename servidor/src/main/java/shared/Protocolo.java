@@ -41,4 +41,11 @@ public class Protocolo {
     // Recuperação de password
     public static final String RECUPERAR_PASSWORD = "RECUPERAR_PASSWORD";
     public static final String RESET_PASSWORD     = "RESET_PASSWORD";
+
+    // Aprovação de livros pendentes
+    public static final String ADMIN_PENDENTES        = "ADMIN_PENDENTES";
+    public static final String ADMIN_APROVAR          = "ADMIN_APROVAR";
+    public static final String ADMIN_REJEITAR         = "ADMIN_REJEITAR";
+    public static final String ADMIN_APROVAR_EXEMPLAR = "ADMIN_APROVAR_EXEMPLAR";
+    public static final String PENDENTES              = "PENDENTES";
 }

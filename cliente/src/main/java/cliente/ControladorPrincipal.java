@@ -40,6 +40,9 @@ public class ControladorPrincipal {
     @FXML private Button           btnAdmin;
     @FXML private Button           btnReconectar;
 
+    // ── Barra de acções ─────────────────────────────────
+    @FXML private Button           btnHistorico;
+
     // ── Stats bar ───────────────────────────────────────
     @FXML private Label labelTotalLivros;
     @FXML private Label labelDisponiveis;
@@ -257,8 +260,11 @@ public class ControladorPrincipal {
 
             cliente.enviar(Protocolo.LOGIN + "|" + nomeEstudante);
 
-            if (nomeEstudante.equalsIgnoreCase("admin")) {
-                btnAdmin.setVisible(true);
+            boolean isAdmin = nomeEstudante.equalsIgnoreCase("admin");
+            btnAdmin.setVisible(isAdmin);
+            btnHistorico.setVisible(isAdmin);
+            btnHistorico.setManaged(isAdmin);
+            if (isAdmin) {
                 definirStatusAdmin();
             } else {
                 definirStatusOnline("Ligado: " + nomeEstudante);

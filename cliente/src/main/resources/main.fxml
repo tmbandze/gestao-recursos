@@ -79,7 +79,7 @@
                 <Button text="↑ Devolver"       onAction="#devolverLivro"  styleClass="btn-warning"/>
                 <Separator orientation="VERTICAL"/>
                 <Button text="Relatório"  onAction="#verRelatorio"  styleClass="btn-ghost"/>
-                <Button text="Histórico"  onAction="#verHistorico"  styleClass="btn-ghost"/>
+                <Button fx:id="btnHistorico" text="Histórico" onAction="#verHistorico" styleClass="btn-ghost" visible="false" managed="false"/>
                 <Region HBox.hgrow="ALWAYS"/>
                 <Button fx:id="btnAdmin"
                         text="⚙  Admin"

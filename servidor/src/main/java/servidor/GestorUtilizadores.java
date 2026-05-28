@@ -132,6 +132,26 @@ public class GestorUtilizadores {
         return Map.of("ok", true, "mensagem", "Password redefinida com sucesso! Já pode entrar.");
     }
 
+    /** Devolve lista de pedidos de recuperação activos (token não expirado). */
+    public synchronized List<Map<String, Object>> listarRecuperacoesPendentes() {
+        LocalDateTime agora = LocalDateTime.now();
+        return utilizadores.stream()
+            .filter(u -> u.getTokenReset() != null && !u.getTokenReset().isBlank())
+            .filter(u -> {
+                try { return LocalDateTime.parse(u.getTokenExpira()).isAfter(agora); }
+                catch (Exception e) { return false; }
+            })
+            .map(u -> {
+                var m = new java.util.LinkedHashMap<String, Object>();
+                m.put("nome",   u.getNome());
+                m.put("email",  u.getEmail());
+                m.put("token",  u.getTokenReset());
+                m.put("expira", u.getTokenExpira());
+                return (Map<String, Object>) m;
+            })
+            .collect(java.util.stream.Collectors.toList());
+    }
+
     // ── Moderação ─────────────────────────────────────────────────────────
 
     public synchronized void bloquearUtilizador(String nome) {

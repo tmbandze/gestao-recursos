@@ -145,6 +145,7 @@ public class GestorTCP {
                         }
                     }
                     case Protocolo.HISTORICO -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso restrito ao administrador"); break; }
                         enviar(out, Protocolo.LOG + "|" + logger.lerUltimas(50));
                     }
                     case Protocolo.RELATORIO -> {
@@ -240,6 +241,67 @@ public class GestorTCP {
                         notificarUtilizador(dest, "✅  A sua conta foi DESBLOQUEADA pelo administrador.");
                         logger.registar("DESBLOQUEAR", nome, "→ " + dest);
                         enviar(out, Protocolo.OK + "|Utilizador " + dest + " desbloqueado");
+                    }
+
+                    // ── Aprovação de livros pendentes ─────────────────────
+                    case Protocolo.ADMIN_PENDENTES -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        List<Livro> pendentes = gestorLivros.listarPendentes();
+                        StringBuilder sb = new StringBuilder(Protocolo.PENDENTES + "|");
+                        for (int i = 0; i < pendentes.size(); i++) {
+                            if (i > 0) sb.append(";");
+                            Livro l = pendentes.get(i);
+                            Livro similar = gestorLivros.buscarSimilar(l.getTitulo(), l.getAutor(), l.getId());
+                            String dupInfo = similar != null
+                                ? "DUP:" + similar.getId() + "(" + similar.getTotalExemplares() + "ex)"
+                                : "-";
+                            sb.append(l.getId()).append("~")
+                              .append(l.getTitulo()).append("~")
+                              .append(l.getAutor()).append("~")
+                              .append(l.getUploadPor() != null ? l.getUploadPor() : "-").append("~")
+                              .append(l.getRelatorioScan() != null ? l.getRelatorioScan() : "N/A").append("~")
+                              .append(l.isFlagAdmin() ? "SUSPEITO" : "OK").append("~")
+                              .append(dupInfo);
+                        }
+                        enviar(out, sb.toString());
+                    }
+                    case Protocolo.ADMIN_APROVAR -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        String id = p.length > 1 ? p[1].trim() : "";
+                        var r = gestorLivros.aprovarLivro(id);
+                        if (r.containsKey("ok")) {
+                            logger.registar("APROVAR_TCP", nome, id);
+                            notificarTodos(Protocolo.ATUALIZAR, nome);
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem"));
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
+                    }
+                    case Protocolo.ADMIN_REJEITAR -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        String idRej   = p.length > 1 ? p[1].trim() : "";
+                        String motivoR = p.length > 2 ? p[2].trim() : "";
+                        var r = gestorLivros.rejeitarLivro(idRej, motivoR);
+                        if (r.containsKey("ok")) {
+                            logger.registar("REJEITAR_TCP", nome, idRej);
+                            notificarTodos(Protocolo.ATUALIZAR, nome);
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem"));
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
+                    }
+                    case Protocolo.ADMIN_APROVAR_EXEMPLAR -> {
+                        if (!isAdmin(nome)) { enviar(out, Protocolo.ERRO + "|Acesso negado"); break; }
+                        String idPend = p.length > 1 ? p[1].trim() : "";
+                        String idExis = p.length > 2 ? p[2].trim() : "";
+                        var r = gestorLivros.adicionarExemplar(idPend, idExis);
+                        if (r.containsKey("ok")) {
+                            logger.registar("EXEMPLAR_TCP", nome, idPend + "→" + idExis);
+                            notificarTodos(Protocolo.ATUALIZAR, nome);
+                            enviar(out, Protocolo.OK + "|" + r.get("mensagem"));
+                        } else {
+                            enviar(out, Protocolo.ERRO + "|" + r.get("erro"));
+                        }
                     }
 
                     // ── Recuperação de password ───────────────────────────

@@ -89,7 +89,9 @@ function mostrarMain() {
 
   // Admin panel: visibilidade controlada apenas pela flag do servidor
   document.getElementById('admin-box').style.display = isAdmin ? 'block' : 'none';
-  if (isAdmin) { recarregarLog(); carregarUtilizadores(); carregarSuspeitos(); }
+  // Histórico de actividade: apenas para admins
+  document.getElementById('btn-historico').style.display = isAdmin ? 'inline-flex' : 'none';
+  if (isAdmin) { recarregarLog(); carregarUtilizadores(); carregarPendentes(); carregarSuspeitos(); carregarRecuperacoes(); }
 
   carregarLivros();
   ligarSSE();
@@ -106,6 +108,17 @@ async function api(path, method = 'GET', body = null) {
       headers: h,
       body: body ? JSON.stringify(body) : null
     });
+    // Sessão expirou (servidor reiniciado ou timeout) → volta ao login
+    if (res.status === 401) {
+      ['sid','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
+      sessionId = nomeUser = null; isAdmin = false;
+      if (sse) { sse.close(); sse = null; }
+      document.getElementById('main-view').classList.remove('active');
+      document.getElementById('auth-view').style.display = 'flex';
+      switchTab('si');
+      toast('Sessão expirada — faz login novamente', 'err');
+      return { erro: 'Sessão expirada' };
+    }
     return await res.json();
   } catch {
     return { erro: 'Erro de ligação ao servidor' };
@@ -134,6 +147,18 @@ function ligarSSE() {
   });
   sse.addEventListener('utilizadores_update', () => {
     if (isAdmin) { carregarUtilizadores(); carregarSuspeitos(); }
+  });
+  sse.addEventListener('recuperacao_update', () => {
+    if (isAdmin) carregarRecuperacoes();
+  });
+  sse.addEventListener('pendente_update', e => {
+    if (isAdmin) {
+      carregarPendentes();
+      if (e.data && e.data.startsWith('novo_pendente:')) {
+        const info = e.data.replace('novo_pendente:', '');
+        toast('⏳ Novo livro para aprovar: ' + info, 'inf');
+      }
+    }
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));
   sse.onerror = () => {};
@@ -188,18 +213,33 @@ function renderGrid() {
     return;
   }
 
-  grid.innerHTML = lista.map((l, i) => `
-    <article class="book ${l.estado === 'DISPONIVEL' ? 'av' : 'req'}"
+  grid.innerHTML = lista.map((l, i) => {
+    const meuPrazo = l.prazosEstudantes?.[nomeUser] || null;
+    const euTenho  = Array.isArray(l.estudantesActuais) && l.estudantesActuais.includes(nomeUser);
+    const disp = l.estado === 'DISPONIVEL';
+    const multi = (l.totalExemplares || 1) > 1;
+    const dispBadge = multi
+      ? `<span class="badge ${disp ? 'b-green' : 'b-orange'}">
+           ${l.copiasDisponiveis > 0 ? `✓ ${l.copiasDisponiveis}/${l.totalExemplares} disponíveis` : `⏳ 0/${l.totalExemplares} disponíveis`}
+         </span>`
+      : `<span class="badge ${disp ? 'b-green' : 'b-orange'}">
+           ${disp ? '✓ disponível' : '⏳ requisitado'}
+         </span>`;
+    return `
+    <article class="book ${disp ? 'av' : 'req'}"
              style="animation-delay:${i * 35}ms"
              onclick="abrirDetalhes('${l.id}')">
+      <div class="book-cover">
+        <img src="/api/livros/${l.id}/capa"
+             loading="lazy"
+             alt="Capa de ${esc(l.titulo)}"
+             onerror="this.remove()">
+      </div>
       <div class="book-t">${esc(l.titulo)}</div>
       <div class="book-a">${esc(l.autor)}</div>
-      ${l.estudanteActual === nomeUser && l.prazoDevolvacao
-        ? `<div class="book-prazo">${badgePrazo(l.prazoDevolvacao)}</div>` : ''}
+      ${euTenho && meuPrazo ? `<div class="book-prazo">${badgePrazo(meuPrazo)}</div>` : ''}
       <div class="book-f">
-        <span class="badge ${l.estado === 'DISPONIVEL' ? 'b-green' : 'b-orange'}">
-          ${l.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
-        </span>
+        ${dispBadge}
         <div style="display:flex;gap:.35rem;align-items:center">
           ${l.temPdf ? '<span class="badge b-pdf">PDF</span>' : ''}
           <span class="badge b-muted cat-badge"
@@ -207,7 +247,8 @@ function renderGrid() {
                 title="Filtrar por esta categoria">${esc(l.categoria)}</span>
         </div>
       </div>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 }
 
 // ── Detalhes ────────────────────────────────────────────────────────────
@@ -217,6 +258,32 @@ async function abrirDetalhes(id) {
   if (d.erro) { toast(d.erro, 'err'); return; }
 
   document.getElementById('det-titulo').textContent = d.titulo;
+
+  // Capa no modal de detalhes
+  let detCapaEl = document.getElementById('det-capa-img');
+  if (!detCapaEl) {
+    detCapaEl = document.createElement('div');
+    detCapaEl.id = 'det-capa-img';
+    detCapaEl.style.cssText =
+      'width:100%;aspect-ratio:3/4;max-height:260px;overflow:hidden;border-radius:var(--rs);' +
+      'background:linear-gradient(160deg,var(--surface),var(--bg));' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-size:2rem;color:var(--border-d);margin-bottom:1rem;position:relative;';
+    detCapaEl.innerHTML = '📚';
+    document.getElementById('det-body').before(detCapaEl);
+  }
+  detCapaEl.innerHTML = '📚';  // placeholder enquanto carrega
+  const capaImg = document.createElement('img');
+  capaImg.src = `/api/livros/${d.id}/capa`;
+  capaImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top';
+  capaImg.onerror = () => capaImg.remove();
+  detCapaEl.appendChild(capaImg);
+
+  // Dados de exemplares
+  const euTenho  = Array.isArray(d.estudantesActuais) && d.estudantesActuais.includes(nomeUser);
+  const meuPrazo = d.prazosEstudantes?.[nomeUser] || null;
+  const multi    = (d.totalExemplares || 1) > 1;
+  const dispCnt  = d.copiasDisponiveis ?? (d.estado === 'DISPONIVEL' ? 1 : 0);
 
   const filaHtml = d.filaEspera?.length
     ? `<div class="queue-list">${d.filaEspera.map((n, i) =>
@@ -232,6 +299,15 @@ async function abrirDetalhes(id) {
       <span class="dlabel">Categoria</span>
       <span class="dval">${esc(d.categoria)}</span>
     </div>
+    ${multi ? `
+    <div class="drow">
+      <span class="dlabel">Exemplares</span>
+      <span class="dval">
+        <span class="badge ${dispCnt > 0 ? 'b-green' : 'b-orange'}">
+          ${dispCnt}/${d.totalExemplares} disponíveis
+        </span>
+      </span>
+    </div>` : `
     <div class="drow">
       <span class="dlabel">Estado</span>
       <span class="dval">
@@ -239,16 +315,18 @@ async function abrirDetalhes(id) {
           ${d.estado === 'DISPONIVEL' ? '✓ disponível' : '⏳ requisitado'}
         </span>
       </span>
-    </div>
-    ${d.estado !== 'DISPONIVEL' ? `
+    </div>`}
+    ${d.estudantesActuais?.length ? `
     <div class="drow">
       <span class="dlabel">Com</span>
-      <span class="dval">${esc(d.estudanteActual || '—')}</span>
+      <span class="dval">${isAdmin
+        ? d.estudantesActuais.map(n => esc(n)).join(', ')
+        : euTenho ? '<span class="badge b-green">✓ tu próprio</span>' : `${d.estudantesActuais.length} utilizador(es)`}</span>
     </div>` : ''}
-    ${d.prazoDevolvacao && d.estudanteActual === nomeUser ? `
+    ${euTenho && meuPrazo ? `
     <div class="drow">
       <span class="dlabel">Prazo</span>
-      <span class="dval">${badgePrazo(d.prazoDevolvacao)}</span>
+      <span class="dval">${badgePrazo(meuPrazo)}</span>
     </div>` : ''}
     <div class="drow">
       <span class="dlabel">Fila</span>
@@ -258,16 +336,16 @@ async function abrirDetalhes(id) {
   const acts = document.getElementById('det-acts');
   acts.innerHTML = '';
 
-  if (d.estado === 'DISPONIVEL') {
+  if (dispCnt > 0 && !euTenho) {
     acts.appendChild(mkBtn('Requisitar', 'btn-success', () => acaoLivro(id, 'requisitar')));
-  } else if (d.estudanteActual === nomeUser) {
+  } else if (euTenho) {
     acts.appendChild(mkBtn('↩ Devolver', 'btn-danger', () => acaoLivro(id, 'devolver')));
   } else {
     acts.appendChild(mkBtn('⏳ Entrar na fila de espera', 'btn-ghost', () => acaoLivro(id, 'requisitar')));
   }
 
   if (d.temPdf) {
-    const canRead = isAdmin || d.estudanteActual === nomeUser;
+    const canRead = isAdmin || euTenho;
     if (canRead) {
       acts.appendChild(mkBtn('📖 Ler PDF', 'btn-primary', () => {
         closeOv('ov-det');
@@ -339,7 +417,14 @@ async function adicionarLivro() {
   document.getElementById('add-a').value = '';
   document.getElementById('add-c').value = 'Geral';
   if (pdfInput) pdfInput.value = '';
-  r.erro ? toast(r.erro, 'err') : toast('Livro adicionado' + (pdfFile ? ' com PDF' : '') + ' com sucesso!', 'ok');
+  if (r.erro) {
+    toast(r.erro, 'err');
+  } else if (r.pendente) {
+    toast('📋 ' + (r.mensagem || 'Livro submetido para revisão do administrador.'), 'inf');
+    if (isAdmin) carregarPendentes();
+  } else {
+    toast('✅ ' + (r.mensagem || 'Livro adicionado com sucesso!'), 'ok');
+  }
   carregarLivros();
 }
 
@@ -517,6 +602,91 @@ async function confirmarReset() {
   switchTab('si');
 }
 
+// ── Admin: livros pendentes de aprovação ────────────────────────────────
+
+async function carregarPendentes() {
+  const box = document.getElementById('admin-pendentes');
+  if (!box) return;
+  box.innerHTML = '<span style="font-size:.82rem;color:var(--ink-d)">A carregar…</span>';
+  const r = await api('/api/admin/pendentes');
+  if (r.erro || !Array.isArray(r.pendentes)) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--red)">Erro ao carregar.</span>';
+    return;
+  }
+  if (!r.pendentes.length) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--green)">✓ Nenhum livro aguarda aprovação.</span>';
+    return;
+  }
+  box.innerHTML = r.pendentes.map(l => {
+    const suspeito = l.flagAdmin;
+    const bgColor  = suspeito ? 'var(--red-bg)' : 'var(--navy-bg)';
+    const brColor  = suspeito ? '#e9b0b0'        : 'var(--navy-br)';
+    const relatorio = l.relatorioScan || 'N/A';
+    const dupHtml = l.duplicadoId ? `
+      <div style="font-size:.76rem;background:#fff8e6;border:1.5px solid #f0d890;
+                  border-radius:var(--rs);padding:.3rem .6rem;margin-bottom:.5rem;">
+        ⚠ <strong>Possível duplicado</strong> — já existe "${esc(l.duplicadoTitulo)}"
+        com ${l.duplicadoExemplares} exemplar(es).
+        <button class="btn btn-outline-orange btn-sm" style="margin-left:.5rem"
+                onclick="adicionarExemplar('${l.id}','${l.duplicadoId}','${esc(l.titulo)}','${l.duplicadoExemplares}')">
+          ➕ Aprovar como novo exemplar
+        </button>
+      </div>` : '';
+    return `
+    <div style="background:${bgColor};border:1.5px solid ${brColor};border-radius:var(--rs);
+                padding:.7rem 1rem;margin-bottom:.5rem;">
+      <div style="font-family:var(--fd);font-size:.9rem;font-weight:600;margin-bottom:.15rem">
+        ${esc(l.titulo)}
+        ${suspeito ? '<span style="color:var(--red);font-size:.75rem;font-weight:600;margin-left:.4rem">🚨 SUSPEITO</span>' : ''}
+      </div>
+      <div style="font-size:.78rem;color:var(--ink-m);margin-bottom:.25rem">
+        ${esc(l.autor)} &nbsp;·&nbsp; ${esc(l.categoria)}
+        &nbsp;·&nbsp; Upload por: <strong>${esc(l.uploadPor || '—')}</strong>
+      </div>
+      ${dupHtml}
+      <div style="font-size:.76rem;margin-bottom:.5rem;padding:.3rem .6rem;
+                  background:var(--paper);border-radius:var(--rs);border:1px solid var(--border)">
+        🔍 ${esc(relatorio)}
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button class="btn btn-success btn-sm"
+                onclick="aprovarPendente('${l.id}','${esc(l.titulo)}')">
+          ✅ Aprovar (novo livro)
+        </button>
+        <button class="btn btn-danger btn-sm"
+                onclick="rejeitarPendente('${l.id}','${esc(l.titulo)}')">
+          ❌ Rejeitar
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function aprovarPendente(id, titulo) {
+  if (!confirm(`Aprovar e publicar o livro "${titulo}"?`)) return;
+  const r = await api(`/api/admin/livros/${id}/aprovar`, 'POST');
+  r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
+  carregarPendentes();
+  carregarLivros();
+}
+
+async function rejeitarPendente(id, titulo) {
+  const motivo = prompt(`Rejeitar "${titulo}"\nMotivo (opcional):`);
+  if (motivo === null) return; // cancelado
+  const r = await api(`/api/admin/livros/${id}/rejeitar`, 'POST', { motivo });
+  r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
+  carregarPendentes();
+  carregarLivros();
+}
+
+async function adicionarExemplar(idPendente, idExistente, titulo, exemplares) {
+  if (!confirm(`Aprovar "${titulo}" como novo exemplar?\n\nO livro já existe com ${exemplares} exemplar(es). Será adicionada mais 1 cópia física (total: ${+exemplares + 1}).`)) return;
+  const r = await api(`/api/admin/livros/${idPendente}/aprovar-como-exemplar/${idExistente}`, 'POST');
+  r.erro ? toast(r.erro, 'err') : toast(r.mensagem, 'ok');
+  carregarPendentes();
+  carregarLivros();
+}
+
 // ── Admin: conteúdo suspeito ─────────────────────────────────────────────
 
 let _modAcao = null, _modAlvo = null;
@@ -592,6 +762,65 @@ async function confirmarModeracao() {
   closeOv('ov-moderar');
   r.erro ? toast(r.erro, 'err') : toast('Acção executada com sucesso.', 'ok');
   carregarUtilizadores();
+}
+
+// ── Admin: recuperações de password pendentes ────────────────────────────
+
+async function carregarRecuperacoes() {
+  const box = document.getElementById('admin-recuperacoes');
+  if (!box) return;
+
+  const r = await api('/api/admin/recuperacoes');
+  if (r.erro) { box.innerHTML = `<span style="font-size:.82rem;color:var(--red)">${esc(r.erro)}</span>`; return; }
+
+  if (!r.recuperacoes.length) {
+    box.innerHTML = '<span style="font-size:.82rem;color:var(--green)">✓ Nenhum pedido pendente.</span>';
+    return;
+  }
+
+  const agora = new Date();
+  box.innerHTML = r.recuperacoes.map(rec => {
+    const exp   = new Date(rec.expira);
+    const mins  = Math.max(0, Math.round((exp - agora) / 60000));
+    const urgente = mins < 30;
+    return `
+    <div style="background:var(--navy-bg);border:1.5px solid var(--navy-br);border-radius:var(--rs);
+                padding:.7rem 1rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <div style="font-family:var(--fd);font-size:.88rem;font-weight:600">${esc(rec.nome)}</div>
+        <div style="font-size:.75rem;color:var(--ink-m)">${esc(rec.email)}</div>
+        <div style="font-size:.72rem;color:${urgente ? 'var(--orange)' : 'var(--ink-d)'}">
+          Expira em ${mins} min
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <span style="font-family:var(--fm);font-size:1rem;font-weight:700;
+                     letter-spacing:.18em;color:var(--navy);background:var(--paper);
+                     border:1.5px solid var(--navy-br);border-radius:var(--rs);
+                     padding:.25rem .7rem" id="tok-${esc(rec.token)}">${esc(rec.token)}</span>
+        <button class="btn btn-ghost btn-sm"
+                onclick="copiarToken('${esc(rec.token)}')"
+                title="Copiar token">📋 Copiar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function copiarToken(token) {
+  navigator.clipboard.writeText(token).then(() => {
+    toast('Token copiado: ' + token, 'ok');
+  }).catch(() => {
+    // fallback para browsers sem clipboard API
+    const el = document.getElementById('tok-' + token);
+    if (el) {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    toast('Selecciona o token manualmente: ' + token, 'inf');
+  });
 }
 
 // ── Enter keys ───────────────────────────────────────────────────────────

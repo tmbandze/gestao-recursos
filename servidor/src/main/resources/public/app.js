@@ -1218,6 +1218,19 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   pdfPrevPage();
 });
 
+// ── Exportar CSV ────────────────────────────────────────────────────────
+
+function exportarCSV(tipo) {
+  const url = `/api/admin/relatorio/${tipo}.csv?sid=${encodeURIComponent(sessionId)}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${tipo}-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast(`A descarregar ${tipo}.csv…`, 'ok');
+}
+
 // ── Chat em Tempo Real ──────────────────────────────────────────────────
 
 function iniciarChat() {

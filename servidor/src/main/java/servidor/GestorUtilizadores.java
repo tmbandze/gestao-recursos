@@ -255,6 +255,11 @@ public class GestorUtilizadores {
         return m;
     }
 
+    /** Lista todos os utilizadores com dados seguros (sem salt/hash) — para relatório CSV. */
+    public synchronized List<Utilizador> listarTodos() {
+        return java.util.Collections.unmodifiableList(utilizadores);
+    }
+
     // Cria conta admin automática na primeira execução se não existir
     private void criarAdminSeNaoExistir() {
         boolean existe = utilizadores.stream().anyMatch(u -> u.getNome().equalsIgnoreCase("admin"));

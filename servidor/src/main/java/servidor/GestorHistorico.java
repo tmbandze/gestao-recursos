@@ -45,6 +45,11 @@ public class GestorHistorico {
             .collect(Collectors.toList());
     }
 
+    /** Devolve todos os empréstimos (activos e devolvidos) — para relatório CSV. */
+    public synchronized List<Emprestimo> listarTodos() {
+        return java.util.Collections.unmodifiableList(emprestimos);
+    }
+
     /** Devolve todos os empréstimos ainda activos (não devolvidos). Usado pelo MonitorPrazos. */
     public synchronized List<Emprestimo> emprestimosActivos() {
         return emprestimos.stream()

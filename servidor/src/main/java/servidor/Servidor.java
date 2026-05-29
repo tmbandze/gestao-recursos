@@ -443,6 +443,102 @@ public class Servidor {
             ctx.json(r);
         });
 
+        // ── Exportar relatórios CSV ───────────────────────────────────
+        app.get("/api/admin/relatorio/emprestimos.csv", ctx -> {
+            String nome = autenticarDownload(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).result("Acesso negado"); return; }
+            StringBuilder sb = new StringBuilder("﻿"); // BOM para Excel
+            sb.append("ID,Livro,Utilizador,Data Início,Prazo,Data Devolução,Estado,Dias Atraso\n");
+            for (var e : gestorHistorico.listarTodos()) {
+                boolean devolvido = e.getDataFim() != null;
+                long diasAtraso = 0;
+                if (!devolvido && e.getPrazo() != null) {
+                    try {
+                        java.time.LocalDate prazo = java.time.LocalDate.parse(e.getPrazo());
+                        diasAtraso = java.time.temporal.ChronoUnit.DAYS.between(prazo, java.time.LocalDate.now());
+                        if (diasAtraso < 0) diasAtraso = 0;
+                    } catch (Exception ignored) {}
+                }
+                String estado = devolvido ? "Devolvido"
+                    : (diasAtraso > 0 ? "Atrasado (" + diasAtraso + "d)" : "Activo");
+                sb.append(csvQ(e.getId())).append(',')
+                  .append(csvQ(e.getTituloLivro())).append(',')
+                  .append(csvQ(e.getEstudante())).append(',')
+                  .append(csvQ(fmtData(e.getDataInicio()))).append(',')
+                  .append(csvQ(fmtData(e.getPrazo()))).append(',')
+                  .append(csvQ(devolvido ? fmtData(e.getDataFim()) : "—")).append(',')
+                  .append(csvQ(estado)).append(',')
+                  .append(devolvido ? "" : (diasAtraso > 0 ? diasAtraso : "")).append('\n');
+            }
+            ctx.contentType("text/csv; charset=utf-8");
+            ctx.header("Content-Disposition", "attachment; filename=\"emprestimos.csv\"");
+            ctx.result(sb.toString());
+        });
+
+        app.get("/api/admin/relatorio/multas.csv", ctx -> {
+            String nome = autenticarDownload(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).result("Acesso negado"); return; }
+            StringBuilder sb = new StringBuilder("﻿");
+            sb.append("Utilizador,Total Pendente (€),Livro,Dias Atraso,Valor (€),Data\n");
+            for (var u : gestorUtilizadores.listarTodos()) {
+                if (u.getMultaTotal() <= 0 && u.getMultas().isEmpty()) continue;
+                if (u.getMultas().isEmpty()) {
+                    sb.append(csvQ(u.getNome())).append(',')
+                      .append(String.format("%.2f", u.getMultaTotal())).append(",,,\n");
+                } else {
+                    for (var m : u.getMultas()) {
+                        sb.append(csvQ(u.getNome())).append(',')
+                          .append(String.format("%.2f", u.getMultaTotal())).append(',')
+                          .append(csvQ(m.getTituloLivro())).append(',')
+                          .append(m.getDiasAtraso()).append(',')
+                          .append(String.format("%.2f", m.getValor())).append(',')
+                          .append(csvQ(fmtData(m.getData()))).append('\n');
+                    }
+                }
+            }
+            ctx.contentType("text/csv; charset=utf-8");
+            ctx.header("Content-Disposition", "attachment; filename=\"multas.csv\"");
+            ctx.result(sb.toString());
+        });
+
+        app.get("/api/admin/relatorio/utilizadores.csv", ctx -> {
+            String nome = autenticarDownload(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).result("Acesso negado"); return; }
+            StringBuilder sb = new StringBuilder("﻿");
+            sb.append("Nome,Email,Bloqueado,Avisos,Multa Pendente (€)\n");
+            for (var u : gestorUtilizadores.listarTodos()) {
+                sb.append(csvQ(u.getNome())).append(',')
+                  .append(csvQ(u.getEmail())).append(',')
+                  .append(u.isBloqueado() ? "Sim" : "Não").append(',')
+                  .append(u.getAvisos()).append(',')
+                  .append(String.format("%.2f", u.getMultaTotal())).append('\n');
+            }
+            ctx.contentType("text/csv; charset=utf-8");
+            ctx.header("Content-Disposition", "attachment; filename=\"utilizadores.csv\"");
+            ctx.result(sb.toString());
+        });
+
+        app.get("/api/admin/relatorio/livros.csv", ctx -> {
+            String nome = autenticarDownload(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).result("Acesso negado"); return; }
+            StringBuilder sb = new StringBuilder("﻿");
+            sb.append("Título,Autor,Categoria,Estado,Exemplares,Disponíveis,Avaliação Média,Nº Avaliações,PDF\n");
+            for (var livro : gestorLivros.listarLivros()) {
+                sb.append(csvQ(livro.getTitulo())).append(',')
+                  .append(csvQ(livro.getAutor())).append(',')
+                  .append(csvQ(livro.getCategoria())).append(',')
+                  .append(csvQ(livro.getEstado().toString())).append(',')
+                  .append(livro.getTotalExemplares()).append(',')
+                  .append(livro.copiasDisponiveis()).append(',')
+                  .append(String.format("%.1f", livro.mediaEstrelas())).append(',')
+                  .append(livro.getAvaliacoes().size()).append(',')
+                  .append(livro.isTemPdf() ? "Sim" : "Não").append('\n');
+            }
+            ctx.contentType("text/csv; charset=utf-8");
+            ctx.header("Content-Disposition", "attachment; filename=\"livros.csv\"");
+            ctx.result(sb.toString());
+        });
+
         // ── Chat em Tempo Real ─────────────────────────────────────────
         app.get("/api/chat/mensagens", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
@@ -520,6 +616,34 @@ public class Servidor {
     public void notificarUsuarioEvento(String nome, String evento, String dados) {
         SseClient client = sseClientes.get(nome);
         if (client != null) client.sendEvent(evento, dados);
+    }
+
+    /** Autenticação via header OU query param ?sid= (necessário para downloads directos). */
+    private String autenticarDownload(Context ctx) {
+        String sid = ctx.header("X-Session-ID");
+        if (sid == null || sid.isBlank()) sid = ctx.queryParam("sid");
+        String nome = sid != null ? sessoes.get(sid) : null;
+        if (nome == null) { ctx.status(401).result("Não autenticado"); return null; }
+        return nome;
+    }
+
+    /** Escapa um valor para CSV: envolve em aspas se contiver vírgula, aspas ou newline. */
+    private static String csvQ(String v) {
+        if (v == null) return "";
+        if (v.contains(",") || v.contains("\"") || v.contains("\n"))
+            return "\"" + v.replace("\"", "\"\"") + "\"";
+        return v;
+    }
+
+    /** Formata uma data ISO (yyyy-MM-dd ou datetime) para dd/MM/yyyy. */
+    private static String fmtData(String iso) {
+        if (iso == null) return "";
+        try {
+            java.time.LocalDate d = iso.length() > 10
+                ? java.time.LocalDateTime.parse(iso).toLocalDate()
+                : java.time.LocalDate.parse(iso);
+            return String.format("%02d/%02d/%d", d.getDayOfMonth(), d.getMonthValue(), d.getYear());
+        } catch (Exception e) { return iso; }
     }
 
     private static String str(Map<String, Object> m, String k) {

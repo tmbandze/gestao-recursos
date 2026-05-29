@@ -70,6 +70,11 @@ public class GestorLivros {
         return livros.stream().filter(l -> !l.isPendente()).collect(Collectors.toList());
     }
 
+    /** Devolve todos os livros incluindo pendentes — para relatório CSV do admin. */
+    public synchronized List<Livro> listarLivros() {
+        return java.util.Collections.unmodifiableList(livros);
+    }
+
     public synchronized List<Livro> pesquisar(String termo) {
         if (termo.isBlank()) return listarTodos();
         String t = termo.toLowerCase();

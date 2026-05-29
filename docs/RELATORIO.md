@@ -4,20 +4,20 @@
 **Disciplina:** Sistemas Distribuídos  
 **Ano lectivo:** 2025/2026  
 **Trabalho:** Prático A — Gestão de Recursos  
-**Linguagem:** Java 17+ com JavaFX 23 e Gson 2.10.1  
-**Ferramenta de build:** Apache Maven (multi-módulo)
+**Stack:** Java 17 · Javalin 6 · Gson · PDFBox · Jakarta Mail · Maven  
+**Repositório:** https://github.com/tmbandze/gestao-recursos
 
 ---
 
 ## 1. Introdução
 
-O presente relatório descreve o desenvolvimento de um sistema distribuído de gestão e partilha de livros entre estudantes. O sistema foi implementado como trabalho prático da disciplina de Sistemas Distribuídos, correspondendo ao enunciado A (Gestão de Recursos).
+O presente relatório descreve o desenvolvimento de um sistema distribuído de gestão e partilha de livros entre estudantes, implementado como trabalho prático da disciplina de Sistemas Distribuídos (Trabalho A — Gestão de Recursos).
 
-O objectivo central foi construir uma aplicação cliente-servidor que permita a múltiplos utilizadores gerir simultaneamente um catálogo de livros, com suporte a requisições, devoluções, fila de espera automática e notificações em tempo real. Adicionalmente, foram implementadas funcionalidades de administração, pesquisa, filtragem e histórico de operações, cobrindo um conjunto alargado de conceitos do programa da disciplina.
+O objectivo foi construir uma aplicação cliente-servidor que permita a múltiplos utilizadores gerir simultaneamente um catálogo de livros, com suporte a requisições, devoluções, filas de espera automáticas e notificações em tempo real. O sistema foi progressivamente alargado para cobrir um conjunto abrangente de conceitos do programa: comunicação assíncrona, propagação de eventos, concorrência, transparência de localização, sessões, persistência e comunicação entre processos.
 
-### 1.1 Motivação da Escolha
+### 1.1 Estratégia de Implementação
 
-O grupo optou pelo trabalho A em detrimento do trabalho B (sistema de chat) com o objectivo de demonstrar que os conceitos de Sistemas Distribuídos se aplicam igualmente a sistemas de gestão de recursos — com a vantagem de um domínio de negócio mais rico e com maior valor prático.
+O grupo optou por uma arquitectura em evolução: o núcleo inicial usa `ServerSocket` TCP (porto 9090) com um protocolo de texto simples, depois foi migrado para um servidor HTTP com SSE (Javalin, porta 8080) e um cliente web (SPA em HTML/JS). Esta escolha permite demonstrar dois paradigmas de comunicação distintos — ambos presentes no sistema final.
 
 ---
 
@@ -25,87 +25,99 @@ O grupo optou pelo trabalho A em detrimento do trabalho B (sistema de chat) com 
 
 ### 2.1 Visão Geral
 
-O sistema segue a arquitectura **cliente-servidor** clássica, composta por:
+O sistema segue a arquitectura **cliente-servidor** com um servidor central único e múltiplos clientes web (browser). A comunicação usa dois canais:
 
-- **Um servidor central** que gere todos os dados e contém a lógica de negócio
-- **N clientes independentes** com interface gráfica JavaFX que comunicam com o servidor via TCP
+- **HTTP REST** (porta 8080) — operações síncronas (login, requisição, devolução…)
+- **SSE — Server-Sent Events** (porta 8080, endpoint `/api/sse`) — notificações assíncronas em tempo real
+- **TCP** (porta 9090) — canal legado para o cliente JavaFX original
 
 ```
-Cliente A (JavaFX) ──────────────────────────┐
-                        TCP (porta 8080)      │
-Cliente B (JavaFX) ──────────────────────────┼──► SERVIDOR CENTRAL
-                                             │     ├── GestorLivros (sincronizado)
-Cliente N (JavaFX) ──────────────────────────┘     ├── BaseDados (livros.json)
-                                                   └── Logger (log.txt)
+Browser (HTML + JS)  ──── HTTP REST ──────►
+                     ◄──── SSE push ────────  SERVIDOR CENTRAL (Java 17)
+                                              ├── GestorLivros
+Cliente JavaFX       ──── TCP 9090 ─────────► ├── GestorUtilizadores
+                                              ├── GestorHistorico
+                                              ├── GestorChat
+                                              ├── GestorEmail
+                                              ├── GestorRecomendacoes
+                                              ├── MonitorPrazos
+                                              └── Logger
+                                                    │
+                                              data/ (JSON + ficheiros)
 ```
 
-### 2.2 Estrutura de Módulos Maven
-
-O projecto é organizado como um **multi-módulo Maven** com dois módulos independentes:
-
-| Módulo | Responsabilidade | JAR |
-|--------|-----------------|-----|
-| `servidor/` | Lógica de negócio, persistência, protocolo | `servidor.jar` (fat jar) |
-| `cliente/` | Interface gráfica, conexão TCP, notificações | executado via `mvn javafx:run` |
-
-Ambos os módulos partilham as classes `shared.Protocolo` e `shared.Livro`, que definem o contrato de comunicação.
-
-### 2.3 Componentes do Servidor
+### 2.2 Componentes do Servidor
 
 | Classe | Responsabilidade |
 |--------|-----------------|
-| `Servidor.java` | `ServerSocket` na porta 8080; `ExecutorService` (thread pool); lista de clientes activos |
-| `GestorClientes.java` | Thread dedicada por cliente; interpreta protocolo; delega para `GestorLivros` |
-| `GestorLivros.java` | Lógica de negócio com todos os métodos `synchronized`; gestão de filas de espera |
-| `BaseDados.java` | Serialização/deserialização com Gson para `data/livros.json` |
-| `Logger.java` | Registo de operações com timestamp em `data/log.txt` |
+| `Servidor.java` | Javalin HTTP (8080); sessões; endpoints REST; SSE broadcast |
+| `GestorLivros.java` | CRUD; exemplares múltiplos; requisição/devolução; filas de espera; multas; PDF; avaliações |
+| `GestorUtilizadores.java` | Registo/login (SHA-256+salt); bloqueio; multas; recuperação de password |
+| `GestorHistorico.java` | Registo de empréstimos; histórico pessoal; empréstimos activos |
+| `GestorTCP.java` | ServerSocket TCP (9090); protocolo de texto; uma thread por cliente |
+| `GestorChat.java` | Chat global e privado; persistência em JSON; máx. 500 mensagens |
+| `GestorEmail.java` | SMTP assíncrono; templates HTML; config em JSON |
+| `GestorRecomendacoes.java` | Score por livro (categoria + avaliação + collaborative + popularidade) |
+| `MonitorPrazos.java` | `ScheduledExecutorService` de hora em hora; notificações SSE + email |
+| `BaseDados.java` | Gson → `livros.json` |
+| `BaseDadosUtilizadores.java` | Gson → `utilizadores.json` |
+| `Logger.java` | Log de operações em `log.txt` com timestamp |
+| `AnalisadorConteudo.java` | Análise de PDFs (palavras proibidas, tamanho, entropia) |
 
-### 2.4 Componentes do Cliente
+### 2.3 Modelos de Dados Partilhados (package `shared`)
 
-| Classe | Responsabilidade |
-|--------|-----------------|
-| `MainApp.java` | Ponto de entrada JavaFX; carrega `main.fxml` |
-| `Cliente.java` | Conexão TCP; `BlockingQueue` para respostas síncronas; retry automático |
-| `NotificacaoService.java` | Leitor único do socket; encaminha mensagens assíncronas e síncronas |
-| `ControladorPrincipal.java` | Lógica da janela principal; liga botões a comandos do servidor |
-| `AdminPanel.java` | Painel de administração (utilizadores online, livros, log) |
+| Classe | Campos relevantes |
+|--------|------------------|
+| `Livro` | id, titulo, autor, categoria, estado, totalExemplares, estudantesActuais, prazosEstudantes, filaEspera, avaliacoes, temPdf, pendente |
+| `Utilizador` | id, nome, email, salt, passwordHash, bloqueado, avisos, multaTotal, multas |
+| `Emprestimo` | id, idLivro, tituloLivro, estudante, dataInicio, prazo, dataFim |
+| `Avaliacao` | utilizador, estrelas, comentario, data |
+| `RegistoMulta` | tituloLivro, diasAtraso, valor, data |
+| `MensagemChat` | id, de, para, texto, data |
 
 ---
 
 ## 3. Protocolo de Comunicação
 
-A comunicação usa **texto simples sobre TCP**. Cada mensagem é uma linha terminada em `\n`, com campos separados por `|`.
+### 3.1 HTTP REST + SSE (canal principal)
 
-### 3.1 Formato Geral
+A comunicação primária usa HTTP/1.1 com JSON. Autenticação via header `X-Session-ID` (token UUID gerado no login). O servidor não mantém estado de sessão por HTTP — o mapeamento `sessionId → nome` é guardado num `ConcurrentHashMap` em memória.
 
 ```
-COMANDO|campo1|campo2\n
+POST /api/login
+Body: {"email": "joao@mail.com", "password": "secret"}
+Response: {"sessionId": "uuid", "nome": "João", "isAdmin": false}
+
+POST /api/livros/{id}/requisitar
+Headers: X-Session-ID: uuid
+Response: {"ok": true, "mensagem": "Livro requisitado! Prazo: 05/06/2026"}
 ```
 
-### 3.2 Comandos Principais
+**SSE:** O browser estabelece uma ligação permanente ao endpoint `/api/sse`. O servidor envia eventos quando ocorrem mudanças:
+
+| Evento SSE | Quando é emitido |
+|-----------|------------------|
+| `atualizacao` | Qualquer mudança no catálogo |
+| `notificacao` | Alerta pessoal (multa, promoção na fila, livro aprovado…) |
+| `utilizadores_update` | Login ou logout de qualquer utilizador |
+| `multa_update` | Nova multa aplicada |
+| `chat_mensagem` | Nova mensagem no chat global |
+| `chat_priv` | Nova mensagem privada |
+| `pendente_update` | Novo livro pendente de aprovação |
+
+### 3.2 TCP (canal legado, porta 9090)
+
+Protocolo de texto linha-a-linha: `COMANDO|campo1|campo2\n`
 
 | Direcção | Comando | Exemplo |
 |----------|---------|---------|
 | C → S | `LOGIN\|nome` | `LOGIN\|João` |
-| C → S | `INSERIR\|titulo\|autor\|cat` | `INSERIR\|Tanenbaum\|Andrew\|SD` |
+| C → S | `LISTAR` | `LISTAR` |
 | C → S | `REQUISITAR\|id` | `REQUISITAR\|uuid-1234` |
 | C → S | `DEVOLVER\|id` | `DEVOLVER\|uuid-1234` |
-| C → S | `LISTAR` | `LISTAR` |
-| C → S | `PESQUISAR\|termo` | `PESQUISAR\|redes` |
-| S → C | `OK\|msg` | `OK\|Livro requisitado com sucesso` |
-| S → C | `LIVROS\|...` | `LIVROS\|id,titulo,autor,cat,estado;...` |
-| S → C | `NOTIFICACAO\|texto` | `NOTIFICACAO\|O livro X está disponível para si!` |
-| S → C | `ATUALIZAR` | `ATUALIZAR` *(broadcast a todos os clientes)* |
-
-### 3.3 Fluxo de Notificação (Feature Principal)
-
-```
-1. Cliente A:  REQUISITAR|uuid-1     →  OK|Livro requisitado
-2. Cliente B:  REQUISITAR|uuid-1     →  OK|Adicionado à fila (posição 1)
-3. Cliente A:  DEVOLVER|uuid-1       →  OK|Devolvido
-   Servidor    →  Cliente B:  NOTIFICACAO|O livro X foi reservado para si!
-   Servidor    →  Todos:      ATUALIZAR
-```
+| S → C | `OK\|msg` | `OK\|Livro requisitado` |
+| S → C | `NOTIFICACAO\|texto` | `NOTIFICACAO\|O livro X está disponível!` |
+| S → C | `ATUALIZAR` | broadcast a todos |
 
 ---
 
@@ -113,149 +125,385 @@ COMANDO|campo1|campo2\n
 
 ### 4.1 Arquitectura Cliente-Servidor
 
-O servidor é o único ponto de autoridade sobre os dados. Os clientes não guardam estado local — toda a informação é obtida do servidor por pedido explícito ou por notificação push.
+O servidor é o único ponto de autoridade sobre os dados. Os clientes (browser) não guardam estado local — toda a informação é obtida do servidor por pedido HTTP ou por notificação SSE push. Esta é a essência da arquitectura cliente-servidor: separação entre a lógica/dados (servidor) e a interface (cliente).
 
 ### 4.2 Comunicação via Sockets TCP
 
-A comunicação é feita com `ServerSocket` / `Socket` da API padrão do Java. O protocolo TCP garante entrega ordenada e sem perdas, adequado para operações que exigem confirmação (requisição, devolução).
+O `GestorTCP` usa `ServerSocket` / `Socket` Java para aceitar clientes JavaFX. Uma thread por cliente interpreta o protocolo de texto e delega para os gestores de negócio. O TCP garante entrega ordenada e sem perdas.
 
 ### 4.3 Concorrência com Thread Pool
 
-O servidor usa `Executors.newCachedThreadPool()` para criar uma thread por cliente. Cada `GestorClientes` corre de forma independente, permitindo que múltiplos clientes operem em simultâneo sem que um bloqueie o outro.
+Dois executores concorrentes estão presentes no sistema:
+
+1. **`ExecutorService` (thread pool)** no `GestorTCP` — uma thread por cliente TCP
+2. **`ScheduledExecutorService`** no `MonitorPrazos` — verifica prazos de hora em hora
+3. **`ExecutorService` (single thread)** no `GestorEmail` — envio assíncrono de emails
+
+O servidor Javalin usa internamente o Jetty com thread pool para HTTP.
 
 ### 4.4 Sincronização de Recursos Partilhados
 
-O `GestorLivros` é o recurso crítico partilhado por todas as threads. Todos os métodos que modificam estado (`requisitar`, `devolver`, `inserir`) são declarados `synchronized`, garantindo que apenas uma thread executa de cada vez e evitando condições de corrida.
+Todos os gestores de estado são thread-safe com `synchronized` nos métodos que modificam dados:
 
 ```java
-public synchronized String requisitar(String id, GestorClientes solicitante) {
-    Livro livro = buscarPorId(id);
-    if (livro.isDisponivel()) {
-        livro.setEstuданteActual(solicitante.getNome());
-        baseDados.guardar();
-        servidor.notificarTodos(Protocolo.ATUALIZAR, solicitante);
-        return Protocolo.OK + "|Livro requisitado com sucesso";
-    } else {
-        livro.adicionarFila(solicitante);
-        return Protocolo.OK + "|Adicionado à fila de espera (posição "
-               + livro.posicaoNaFila(solicitante) + ")";
-    }
+// GestorLivros.java — exemplo do método mais crítico
+public synchronized Map<String, Object> devolver(String id, String nome) {
+    Livro livro = buscar(id);
+    // ... calcular multa, actualizar estado, promover fila ...
+    baseDados.guardar(livros);
+    servidor.notificarTodos("atualizacao", "devolvido", nome);
+    return resp;
 }
 ```
 
-### 4.5 Comunicação Assíncrona (Notificações Push)
+O `ConcurrentHashMap` é usado para sessões e clientes SSE (operações atómicas sem `synchronized` explícito).
 
-O cliente tem uma thread dedicada — `NotificacaoService` — que é o **único leitor** do `InputStream` do socket. Esta thread mantém-se à escuta permanente e encaminha as mensagens:
+### 4.5 Comunicação Assíncrona — SSE Push
 
-- Mensagens `NOTIFICACAO|...` → `Platform.runLater()` para actualizar a GUI
-- Mensagem `ATUALIZAR` → recarrega a lista de livros em todos os clientes
-- Qualquer outra mensagem → coloca na `BlockingQueue` para desbloquear o `enviar()` síncrono
+O cliente mantém uma conexão SSE permanente (`EventSource`). O servidor notifica directamente os clientes relevantes sem que eles precisem de fazer polling:
 
-Este design evita o padrão de *polling* (o cliente perguntar repetidamente "houve mudanças?") e implementa **comunicação baseada em eventos**.
+```java
+// Notificar utilizador específico
+public void notificarUsuario(String nome, String dados) {
+    SseClient c = sseClientes.get(nome);
+    if (c != null) c.sendEvent("notificacao", dados);
+}
+
+// Broadcast para todos
+public void notificarTodos(String evento, String dados, String excluir) {
+    sseClientes.forEach((n, c) -> {
+        if (!n.equals(excluir)) c.sendEvent(evento, dados);
+    });
+}
+```
+
+Este design implementa **comunicação baseada em eventos** (event-driven), eliminando o padrão ineficiente de polling.
 
 ### 4.6 Transparência de Localização
 
-O cliente não sabe onde os dados estão fisicamente armazenados. As configurações de host e porta são lidas de `config.properties`:
+O cliente (browser) acede ao servidor por `IP:8080`. O utilizador não sabe onde os dados estão fisicamente armazenados. O servidor detecta e exibe o seu IP de rede no arranque:
 
-```properties
-servidor.host=localhost
-servidor.porta=8080
+```java
+private String detectarIpLocal() {
+    // Filtra interfaces VMware, VirtualBox, Bluetooth, loopback
+    // Retorna o IP da primeira interface de rede real
+}
 ```
 
-Para mudar o servidor de máquina, basta alterar este ficheiro — o código do cliente não precisa de ser modificado.
+Para usar a aplicação em rede local, basta que outros computadores acedam a `http://IP_DO_SERVIDOR:8080`.
 
-### 4.7 Middleware — Protocolo de Texto
+### 4.7 Comunicação Assíncrona por Email
 
-O protocolo de comandos (`INSERIR|...`, `LISTAR`, `OK|...`) funciona como middleware simplificado: abstrai a comunicação em rede e oferece uma interface uniforme entre cliente e servidor.
+O `GestorEmail` usa um `ExecutorService` de thread única para enviar emails sem bloquear o thread HTTP. O envio é iniciado imediatamente mas executado em background:
 
----
-
-## 5. Decisões de Design
-
-### 5.1 Leitor Único do Socket (NotificacaoService)
-
-Uma das decisões mais importantes foi fazer da `NotificacaoService` o **único leitor** do `InputStream`. Se existissem dois leitores, haveria condição de corrida sobre quais bytes cada um leria. A solução usa uma `BlockingQueue<String>` no `Cliente`: a `NotificacaoService` deposita respostas síncronas na fila, e o método `enviar()` bloqueia até receber a sua resposta.
-
-### 5.2 Protocolo de Texto vs. Serialização de Objectos
-
-Optou-se por protocolo de texto em vez de serialização binária de objectos Java porque:
-- É mais fácil de depurar (pode-se testar com `telnet` ou `netcat`)
-- É independente da versão das classes Java
-- É mais fácil de explicar e documentar
-
-### 5.3 Persistência em JSON vs. Base de Dados Relacional
-
-O uso de Gson com ficheiros JSON justifica-se pelo âmbito académico do projecto: não requer instalação de servidor de base de dados, o ficheiro é legível e pode ser mostrado na apresentação.
-
-### 5.4 Maven Multi-Módulo
-
-A separação em dois módulos Maven independentes (`servidor/` e `cliente/`) reflecte a separação física dos processos: o servidor e o cliente correm em JVMs distintas (potencialmente em máquinas distintas), pelo que faz sentido que tenham builds independentes.
-
----
-
-## 6. Funcionalidades Implementadas
-
-| Funcionalidade | Estado |
-|----------------|--------|
-| Login com nome de estudante | ✓ Implementado |
-| Listagem de todos os livros | ✓ Implementado |
-| Inserção de livros | ✓ Implementado |
-| Requisição de livro disponível | ✓ Implementado |
-| Devolução de livro | ✓ Implementado |
-| Fila de espera automática (FIFO) | ✓ Implementado |
-| Notificação push ao próximo da fila | ✓ Implementado |
-| Actualização automática em todos os clientes | ✓ Implementado |
-| Pesquisa por título, autor ou categoria | ✓ Implementado |
-| Filtro por estado (todos / disponíveis / requisitados) | ✓ Implementado |
-| Detalhes do livro com fila de espera | ✓ Implementado |
-| Relatório de estatísticas | ✓ Implementado |
-| Histórico de operações (últimas 50) | ✓ Implementado |
-| Painel de administração (utilizadores, livros, log) | ✓ Implementado |
-| Configuração de host/porta via ficheiro | ✓ Implementado |
-| Persistência em JSON | ✓ Implementado |
-| Log de operações com timestamp | ✓ Implementado |
-| Múltiplos clientes simultâneos | ✓ Implementado |
-
----
-
-## 7. Limitações Conhecidas
-
-| Limitação | Justificação |
-|-----------|-------------|
-| Sem autenticação por palavra-passe | Fora do âmbito do enunciado |
-| Sem encriptação TLS | Rede local/académica — sem dados sensíveis |
-| Servidor como ponto único de falha | Trade-off aceite para âmbito académico |
-| Filas de espera em memória (não persistidas) | Reiniciar o servidor limpa as filas |
-| Sem suporte a múltiplos servidores | Âmbito académico |
-
----
-
-## 8. Conclusão
-
-O sistema implementado cobre todos os requisitos do enunciado base e acrescenta um conjunto de funcionalidades que demonstram explicitamente os conceitos do programa de Sistemas Distribuídos: concorrência com thread pool, sincronização de recursos partilhados, comunicação assíncrona baseada em eventos, transparência de localização e middleware de protocolo.
-
-A decisão de implementar o trabalho A (gestão de recursos) em vez do B (chat) permitiu explorar um domínio de negócio mais rico — com filas de espera, notificações selectivas e painel de administração — mantendo a mesma base técnica de Sockets TCP, threads e JavaFX.
-
----
-
-## Anexo A — Como Compilar e Executar
-
-```bash
-# Terminal 1 — Servidor
-cd servidor
-mvn clean package
-java -jar target/servidor.jar
-
-# Terminal 2 — Cliente (repetir para múltiplos clientes)
-cd cliente
-mvn javafx:run
+```java
+public void enviarAsync(String para, String assunto, String corpoHtml) {
+    if (!isConfigurado()) return;
+    executor.submit(() -> {
+        try { enviarInterno(para, assunto, corpoHtml); }
+        catch (Exception e) { /* log */ }
+    });
+}
 ```
 
-## Anexo B — Dependências
+### 4.8 Comunicação Baseada em Eventos (Event-Driven)
+
+O `MonitorPrazos` é um componente autónomo que funciona como agendador de eventos:
+
+```java
+scheduler.scheduleAtFixedRate(this::verificar, 30, 3600, TimeUnit.SECONDS);
+```
+
+A cada hora verifica os empréstimos activos e emite eventos SSE + emails conforme o estado de cada prazo. Este é o padrão **publish/subscribe** aplicado ao domínio do problema.
+
+### 4.9 Persistência de Estado
+
+O sistema garante que o estado sobrevive a reinícios do servidor: todos os dados são imediatamente guardados em ficheiros JSON após cada modificação. Não existe cache em memória — a fonte de verdade é sempre o ficheiro.
+
+### 4.10 Sessões sem Estado HTTP (Stateless Sessions)
+
+O protocolo HTTP é stateless por natureza. O sistema implementa sessões com tokens UUID: cada login gera um novo UUID guardado no `ConcurrentHashMap` do servidor. O cliente envia o token no header `X-Session-ID` em cada pedido. Esta é a base dos sistemas de autenticação modernos.
+
+---
+
+## 5. Funcionalidades Implementadas
+
+### 5.1 Funcionalidades Base (Enunciado Mínimo)
+
+| Funcionalidade | Implementação |
+|----------------|--------------|
+| Inserção de livros | POST `/api/livros` com título, autor, categoria |
+| Consulta de livros | GET `/api/livros`, pesquisa, filtros por estado |
+| Requisição de livro | POST `/api/livros/{id}/requisitar` |
+| Devolução de livro | POST `/api/livros/{id}/devolver` |
+| Múltiplos clientes | HTTP + SSE (N browsers) + TCP (JavaFX legado) |
+
+### 5.2 Funcionalidades Estendidas
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| **Autenticação** | Registo/login por email+password; hash SHA-256 com salt de 16 bytes |
+| **Recuperação de password** | Token de 8 chars alfanuméricos, TTL 2h; entregue por email ou consola |
+| **Múltiplos exemplares** | Um livro pode ter N cópias físicas; controlo independente por exemplar |
+| **Prazo de devolução** | 7 dias; prazo individual por estudante/cópia |
+| **Fila de espera FIFO** | Promoção automática quando uma cópia fica disponível |
+| **Multas por atraso** | 0,50 €/dia; bloqueio de requisições até pagamento; perdão admin |
+| **Upload de PDF** | Máximo 50 MB; capa extraída da 1ª página (PDFBox); análise de conteúdo |
+| **Workflow de aprovação** | Livros com PDF ficam pendentes até aprovação do admin |
+| **Moderação de conteúdo** | PDFs analisados (palavras proibidas, entropia, tamanho anómalo) |
+| **Avaliações** | 1–5 estrelas + comentário; uma avaliação por utilizador por livro |
+| **Notificações SSE** | Broadcast e push individual em tempo real (multas, filas, aprovações…) |
+| **Monitor de prazos** | Verificação automática de hora em hora; alertas de 1 dia / hoje / atraso |
+| **Chat em tempo real** | Sala global + mensagens privadas; histórico persistido; SSE |
+| **Exportação CSV** | 4 relatórios: empréstimos, multas, utilizadores, livros; BOM UTF-8 |
+| **Notificações por email** | SMTP async; 6 templates HTML (boas-vindas, prazo, multa, recuperação…) |
+| **Recomendações** | Motor com 4 sinais: categoria favorita, avaliação, collaborative, popularidade |
+| **Painel admin** | Utilizadores em tempo real; moderação; aprovações; CSV; email config |
+| **Log de operações** | Todas as operações com timestamp em `log.txt` |
+
+---
+
+## 6. Decisões de Design
+
+### 6.1 Dois Canais de Comunicação
+
+Manter o canal TCP legado ao lado do HTTP/SSE demonstra que o sistema suporta múltiplos protocolos e tipos de cliente. O TCP é adequado para o cliente JavaFX (conexão persistente, baixa latência); o HTTP/SSE é adequado para browsers (stateless, firewall-friendly).
+
+### 6.2 SSE vs. WebSockets
+
+Optou-se por SSE em vez de WebSockets porque:
+- SSE é unidireccional (servidor → cliente), o que cobre todos os casos de uso (notificações)
+- SSE é mais simples de implementar e depurar
+- Reconexão automática nativa no browser
+- As operações do cliente para o servidor já usam HTTP POST — não há necessidade de canal bidirecional
+
+### 6.3 JSON vs. Base de Dados Relacional
+
+O uso de Gson com ficheiros JSON justifica-se pelo âmbito académico: não requer instalação adicional, os ficheiros são legíveis e editáveis para demonstração, e o desempenho é suficiente para o volume de dados esperado.
+
+### 6.4 Fat JAR (maven-shade-plugin)
+
+O servidor é empacotado como um JAR único com todas as dependências. Isto simplifica o deploy: `java -jar servidor.jar` em qualquer máquina com Java 17, sem necessidade de classpath manual.
+
+### 6.5 Hashing de Passwords
+
+As passwords nunca são guardadas em texto claro. Cada utilizador tem um `salt` de 16 bytes aleatórios; a password é guardada como `SHA-256(salt + password)`. Isto evita ataques de dicionário e rainbow tables.
+
+### 6.6 Sessões em Memória
+
+As sessões (`sessionId → nome`) estão num `ConcurrentHashMap` em memória. Se o servidor reiniciar, as sessões são perdidas e os utilizadores precisam de fazer login novamente — comportamento esperado e correcto. Os dados de utilizadores e livros são persistidos em JSON e sobrevivem ao reinício.
+
+---
+
+## 7. Fluxos Principais
+
+### 7.1 Requisição com Fila de Espera
+
+```
+1. Utilizador A → POST /api/livros/X/requisitar
+   Servidor: livro disponível → regista empréstimo, define prazo (hoje + 7d)
+   Servidor → SSE broadcast: "atualizacao"
+   Resposta: {"ok": true, "mensagem": "Prazo: 05/06/2026"}
+
+2. Utilizador B → POST /api/livros/X/requisitar (livro já requisitado)
+   Servidor: sem cópias → adiciona B à fila de espera
+   Resposta: {"ok": true, "mensagem": "Adicionado à fila (posição 1)"}
+
+3. Utilizador A → POST /api/livros/X/devolver
+   Servidor: regista devolução, verifica fila → próximo é B
+   Servidor: requisita automaticamente para B (prazo = hoje + 7d)
+   Servidor → SSE para B: "notificacao" → "📚 A tua cópia está disponível!"
+   Servidor → SSE broadcast: "atualizacao"
+```
+
+### 7.2 Multa por Atraso
+
+```
+MonitorPrazos (de hora em hora):
+  prazo = 2026-05-25, hoje = 2026-05-29 → atraso = 4 dias
+  multa estimada = 4 × 0,50€ = 2,00€
+  → SSE para utilizador: "⚠ ATRASO: O livro X deveria ter sido devolvido há 4 dias!"
+  → Email para utilizador: template htmlAtraso() via SMTP async
+
+Utilizador → POST /api/livros/X/devolver (com 4 dias de atraso):
+  multa = 4 × 0,50€ = 2,00€ → adicionada ao utilizador
+  → SSE para utilizador: "💸 Multa aplicada: 2,00€"
+  → Email para utilizador: template htmlMultaAplicada()
+  → SSE broadcast: "multa_update"
+  Utilizador fica bloqueado de novas requisições até perdão admin
+```
+
+### 7.3 Aprovação de Livro com PDF
+
+```
+1. Utilizador → POST /api/livros (multipart: titulo + pdf)
+   AnalisadorConteudo analisa o PDF:
+     - se suspeito: livro.flagAdmin = true
+     - de qualquer forma: livro.pendente = true
+   → SSE para admin: "pendente_update: novo_pendente"
+   → TCP para admin: "⏳ Novo livro pendente de aprovação..."
+
+2. Admin → POST /api/admin/aprovar/{id}
+   livro.pendente = false
+   → SSE broadcast: "atualizacao: novo_livro"
+   → SSE para uploader: "✅ O teu livro foi aprovado!"
+
+   OU Admin → POST /api/admin/rejeitar/{id}
+   Livro apagado (JSON + PDF + capa)
+   → SSE para uploader: "❌ O teu livro foi rejeitado"
+```
+
+---
+
+## 8. Estrutura de Ficheiros
+
+```
+gestao-recursos/
+│
+├── servidor/                              # Módulo Maven
+│   ├── pom.xml                            # Dependências + shade plugin
+│   ├── target/servidor.jar                # Fat JAR executável
+│   └── src/main/
+│       ├── java/
+│       │   ├── servidor/
+│       │   │   ├── Servidor.java          # Entry point + Javalin + endpoints
+│       │   │   ├── GestorLivros.java      # Lógica de livros (synchronized)
+│       │   │   ├── GestorUtilizadores.java# Autenticação + multas
+│       │   │   ├── GestorHistorico.java   # Histórico de empréstimos
+│       │   │   ├── GestorTCP.java         # ServerSocket TCP (9090)
+│       │   │   ├── GestorChat.java        # Chat SSE em tempo real
+│       │   │   ├── GestorEmail.java       # SMTP assíncrono (Jakarta Mail)
+│       │   │   ├── GestorRecomendacoes.java# Motor de recomendações
+│       │   │   ├── MonitorPrazos.java     # Verificação agendada de prazos
+│       │   │   ├── AnalisadorConteudo.java# Análise de PDFs
+│       │   │   ├── BaseDados.java         # Persistência livros.json
+│       │   │   ├── BaseDadosUtilizadores.java # Persistência utilizadores.json
+│       │   │   └── Logger.java            # Log com timestamp
+│       │   └── shared/
+│       │       ├── Livro.java             # Modelo de livro
+│       │       ├── Utilizador.java        # Modelo de utilizador
+│       │       ├── Emprestimo.java        # Modelo de empréstimo
+│       │       ├── Avaliacao.java         # Modelo de avaliação
+│       │       ├── RegistoMulta.java      # Modelo de multa
+│       │       ├── MensagemChat.java      # Modelo de mensagem de chat
+│       │       ├── EstadoLivro.java       # Enum: DISPONIVEL / REQUISITADO
+│       │       └── Protocolo.java         # Constantes do protocolo TCP
+│       └── resources/
+│           └── public/
+│               ├── index.html             # SPA — página principal
+│               └── app.js                 # Toda a lógica do cliente (~1400 linhas)
+│
+├── cliente/                               # Módulo Maven — cliente JavaFX (legado)
+│   └── src/main/java/cliente/
+│       ├── MainApp.java
+│       ├── Cliente.java                   # Conexão TCP + BlockingQueue
+│       └── NotificacaoService.java        # Leitor único do socket
+│
+├── docs/
+│   ├── RELATORIO.md                       # Este documento
+│   ├── ARQUITETURA.md                     # Arquitectura detalhada
+│   ├── INSTALACAO.md                      # Como instalar e executar
+│   ├── MANUAL.md                          # Manual do utilizador
+│   ├── CONTEXT.md                         # Contexto académico
+│   ├── APRESENTACAO.md                    # Guia para apresentação
+│   └── INDEX.md                           # Índice geral
+│
+└── README.md                              # Visão geral do projecto
+```
+
+---
+
+## 9. Limitações Conhecidas
+
+| Limitação | Justificação / Mitigação |
+|-----------|--------------------------|
+| Sessões em memória | Reinício do servidor invalida sessões ativas — comportamento esperado |
+| Servidor como ponto único de falha | Âmbito académico; replicação exigiria consenso distribuído (Raft/Paxos) |
+| Sem TLS/HTTPS | Rede local académica; pode ser adicionado via proxy reverso (Nginx) |
+| Persistência em JSON | Adequada para o volume académico; em produção usar PostgreSQL/MongoDB |
+| Análise de conteúdo simplificada | `AnalisadorConteudo` usa heurísticas; não substitui antivírus real |
+| Filas de espera em memória (índice) | O estado das filas é reconstruído ao carregar `livros.json` |
+
+---
+
+## 10. Conclusão
+
+O sistema implementado supera os requisitos mínimos do enunciado e demonstra, de forma explícita e verificável, os principais conceitos do programa de Sistemas Distribuídos:
+
+- **Sockets TCP**: canal GestorTCP (porta 9090) com protocolo de texto
+- **HTTP REST**: API Javalin com 30+ endpoints
+- **Comunicação assíncrona**: SSE push para notificações em tempo real
+- **Concorrência**: `synchronized`, `ConcurrentHashMap`, `ExecutorService`, `ScheduledExecutorService`
+- **Propagação de eventos**: broadcast SSE a todos os clientes ligados
+- **Sessões**: tokens UUID com `ConcurrentHashMap`
+- **Transparência de localização**: acesso por IP:porta com auto-detecção
+- **Persistência**: estado distribuído em ficheiros JSON (sobrevive a reinícios)
+- **Comunicação baseada em eventos**: `MonitorPrazos` como publisher agendado
+
+A evolução arquitectónica do sistema — de TCP/JavaFX para HTTP/SSE/Browser — demonstra também a capacidade de adaptar uma arquitectura distribuída a novos requisitos sem perder compatibilidade com clientes existentes.
+
+---
+
+## Anexo A — Dependências
 
 | Biblioteca | Versão | Uso |
 |------------|--------|-----|
-| Java SE | 17+ | Linguagem base, ServerSocket, threads |
-| JavaFX | 23 | Interface gráfica |
-| Gson | 2.10.1 | Serialização JSON |
-| Apache Maven | 3.8+ | Gestão de build e dependências |
+| Java SE | 17 | Linguagem, threads, sockets, criptografia |
+| Javalin | 6.1.6 | Servidor HTTP + SSE + routing + multipart |
+| Gson | 2.10.1 | Serialização JSON (persistência) |
+| Jackson Databind | 2.17.0 | Serialização JSON (respostas HTTP) |
+| SLF4J Simple | 2.0.13 | Logging interno Jetty/Javalin |
+| Apache PDFBox | 3.0.3 | Extracção de capa (1ª página PDF → JPEG) |
+| Jakarta Mail (Angus) | 2.0.3 | Envio de emails via SMTP |
+| Apache Maven | 3.8+ | Build + dependências + fat JAR |
+
+## Anexo B — Endpoints Completos
+
+### Públicos (sem autenticação)
+- `GET /` — Aplicação web (index.html)
+- `GET /app.js` — JavaScript do cliente
+- `POST /api/login` — Login
+- `POST /api/registar` — Registo
+- `POST /api/recuperar-password` — Pedir recuperação
+- `POST /api/reset-password` — Redefinir password
+- `GET /api/livros` — Catálogo
+- `GET /api/livros/pesquisa?q=` — Pesquisa
+- `GET /api/livros/{id}` — Detalhes
+- `GET /api/livros/{id}/capa` — Capa JPEG
+
+### Autenticados (header `X-Session-ID`)
+- `POST /api/logout`
+- `GET /api/sse` — Conexão SSE
+- `POST /api/livros` — Adicionar livro
+- `POST /api/livros/{id}/requisitar`
+- `POST /api/livros/{id}/devolver`
+- `POST /api/livros/{id}/avaliar`
+- `DELETE /api/livros/{id}/avaliacao`
+- `GET /api/livros/{id}/pdf`
+- `GET /api/historico`
+- `GET /api/multas`
+- `GET /api/relatorio`
+- `GET /api/chat/mensagens?para=`
+- `POST /api/chat/enviar`
+- `GET /api/recomendacoes?max=`
+
+### Admin (header `X-Session-ID`, nome = "admin")
+- `GET /api/admin/utilizadores`
+- `POST /api/admin/bloquear`
+- `POST /api/admin/desbloquear`
+- `POST /api/admin/avisar`
+- `POST /api/admin/perdoar-multa`
+- `GET /api/admin/multas`
+- `GET /api/admin/log`
+- `GET /api/admin/pendentes`
+- `POST /api/admin/aprovar/{id}`
+- `POST /api/admin/rejeitar/{id}`
+- `POST /api/admin/exemplar/{idPendente}/{idExistente}`
+- `GET /api/admin/suspeitos`
+- `GET /api/admin/recuperacoes`
+- `GET /api/admin/relatorio/{tipo}.csv?sid=`
+- `GET /api/chat/interlocutores`
+- `GET /api/admin/email/config`
+- `POST /api/admin/email/config`
+- `POST /api/admin/email/testar`
+- `DELETE /api/livros/{id}`

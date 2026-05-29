@@ -2,157 +2,123 @@
 
 ## 1. Contexto Académico
 
-Este projecto é o trabalho prático da disciplina de **Sistemas Distribuídos**, trabalho A — Gestão de Recursos. O sistema implementa a partilha de livros entre estudantes como caso de uso, mas a profundidade técnica vai além do enunciado mínimo, cobrindo múltiplos conceitos do programa de forma explícita e demonstrável.
+Este projecto é o trabalho prático da disciplina de **Sistemas Distribuídos** (Trabalho A — Gestão de Recursos). O sistema implementa uma biblioteca digital de partilha de livros entre estudantes, mas a profundidade técnica supera o enunciado mínimo, cobrindo múltiplos conceitos do programa de forma explícita e demonstrável.
 
-O grupo optou pelo trabalho A (livros) em vez do B (chat) com o objectivo de se diferenciar — a maioria dos grupos fará o chat — e demonstrar que os conceitos de SD se aplicam igualmente a sistemas de gestão de recursos, com a vantagem de um domínio de negócio mais rico.
-
----
-
-## 2. Enunciado Base (Requisitos Mínimos)
-
-O enunciado exige quatro operações sobre livros:
-
-| Operação | Descrição |
-|----------|-----------|
-| Inserção | Adicionar um novo livro ao sistema |
-| Consulta | Ver lista de livros e detalhes |
-| Requisição | Pedir empréstimo de um livro disponível |
-| Devolução | Devolver um livro requisitado |
+O grupo optou pelo Trabalho A (livros) em vez do B (chat) com o objectivo de se diferenciar e demonstrar que os conceitos de SD se aplicam a sistemas de gestão de recursos — com a vantagem de um domínio de negócio mais rico. Adicionalmente, o sistema inclui um módulo de chat em tempo real, cobrindo os requisitos de ambos os trabalhos.
 
 ---
 
-## 3. Requisitos Estendidos (Features Diferenciadores)
+## 2. Requisitos Mínimos do Enunciado
 
-Para além do enunciado mínimo, o sistema implementa:
+| Operação | Implementação |
+|----------|--------------|
+| **Inserção** | Qualquer utilizador pode adicionar livros; com PDF fica pendente de aprovação |
+| **Consulta** | Catálogo com pesquisa por título/autor/categoria e filtros de estado |
+| **Requisição** | Disponível / fila de espera automática; prazo de 7 dias |
+| **Devolução** | Com cálculo automático de multa se fora do prazo |
 
-### 3.1 Múltiplos Clientes Simultâneos
-Vários estudantes podem usar o sistema ao mesmo tempo. O servidor cria uma thread dedicada para cada cliente conectado, garantindo que uma operação lenta de um cliente não bloqueia os outros.
+---
+
+## 3. Funcionalidades Estendidas
+
+### 3.1 Autenticação e Segurança
+
+Registo e login por email + password. As passwords são guardadas como `SHA-256(salt + password)` com salt de 16 bytes aleatórios — nunca em texto claro. Recuperação por token de 8 caracteres alfanuméricos (TTL 2 horas), entregue por email se SMTP configurado.
+
+**Conceito de SD:** Sessões sem estado (tokens UUID), segurança em sistemas distribuídos.
+
+### 3.2 Múltiplos Clientes Simultâneos
+
+O servidor aceita N browsers em simultâneo via HTTP/SSE e clientes JavaFX via TCP. Cada pedido HTTP é tratado numa thread independente. O `GestorTCP` cria uma thread por cliente TCP com `ExecutorService`.
 
 **Conceito de SD:** Concorrência, gestão de recursos partilhados.
 
-### 3.2 Notificações Assíncronas
-Quando um estudante tenta requisitar um livro que está indisponível, pode entrar na fila de espera. Quando o livro é devolvido, o servidor notifica automaticamente o próximo da fila sem que o cliente precise de perguntar repetidamente.
+### 3.3 Notificações Push em Tempo Real (SSE)
 
-**Conceito de SD:** Comunicação assíncrona, propagação de eventos, estilo arquitectónico baseado em eventos.
+Cada browser mantém uma conexão SSE permanente. O servidor notifica directamente o cliente relevante (ou faz broadcast) sem que o cliente precise de perguntar. Eventos: nova requisição, devolução, multa, promoção na fila, livro aprovado, chat, etc.
 
-### 3.3 Fila de Espera Automática
-Sistema de fila FIFO para livros indisponíveis. O servidor gere a ordem de espera e garante equidade entre os estudantes.
+**Conceito de SD:** Comunicação assíncrona, propagação de eventos, event-driven architecture.
+
+### 3.4 Fila de Espera Automática
+
+Sistema FIFO por livro. Quando uma cópia é devolvida, o servidor promove automaticamente o próximo da fila: regista o empréstimo, define o prazo e envia notificação SSE + TCP.
 
 **Conceito de SD:** Gestão de estado distribuído, consistência.
 
-### 3.4 Log Centralizado de Operações
-Todas as operações (quem inseriu, requisitou, devolveu, e quando) são registadas num log com timestamp. O log serve como auditoria e histórico do sistema.
+### 3.5 Múltiplos Exemplares
 
-**Conceito de SD:** Registo de estado distribuído, rastreabilidade.
+Um livro pode ter N cópias físicas. Cada utilizador tem o seu prazo individual. A fila de espera é gerida a nível do livro, não da cópia.
 
-### 3.5 Actualização Automática da Lista
-A lista de livros no cliente actualiza-se automaticamente quando outro cliente faz uma operação (sem precisar de refrescar manualmente).
+**Conceito de SD:** Recursos partilhados com controlo de acesso concorrente.
 
-**Conceito de SD:** Propagação de eventos, consistência de vistas.
+### 3.6 Monitor Automático de Prazos
 
-### 3.6 Transparência de Localização
-O cliente não sabe nem precisa de saber onde os dados estão guardados fisicamente. Acede sempre pelo mesmo endereço e porta do servidor.
+`ScheduledExecutorService` que verifica todos os empréstimos activos de hora em hora. Emite alertas SSE e emails automáticos conforme o prazo:
+- 1 dia antes: lembrete
+- No dia: urgente
+- Após o prazo: alerta com multa estimada (repete a cada hora)
 
-**Conceito de SD:** Transparência de localização (definida no programa como um dos tipos de transparência em SD).
+**Conceito de SD:** Comunicação baseada em eventos, agendamento distribuído.
 
-### 3.7 Pesquisa e Filtros
-Pesquisa por título, autor ou categoria. Filtro por disponibilidade (todos / disponíveis / requisitados).
+### 3.7 Upload de PDF com Análise de Conteúdo
 
-**Valor:** Usabilidade e profissionalismo do sistema.
+Os utilizadores podem fazer upload de PDFs. O servidor analisa o conteúdo automaticamente (`AnalisadorConteudo`) e sinaliza ficheiros suspeitos. O livro fica pendente até aprovação do admin. A capa é extraída assincronamente da 1ª página (PDFBox).
 
-### 3.8 Relatório de Utilização
-Estatísticas: livros mais requisitados, estudantes mais activos, histórico de operações.
+**Conceito de SD:** Processamento assíncrono, workflow de aprovação.
 
-**Valor:** Demonstração de que os dados do log são úteis além do armazenamento.
+### 3.8 Chat em Tempo Real
 
----
+Chat global (todos os utilizadores) e privado (1-para-1) via SSE. O `GestorChat` persiste as mensagens em JSON (máx. 500). O admin tem acesso a todas as conversas privadas.
 
-## 4. Domínio de Negócio
+**Conceito de SD:** Comunicação em grupo, mensagens dirigidas.
 
-### Entidades
+### 3.9 Exportação de Relatórios CSV
 
-**Livro**
-- `id` — identificador único (UUID)
-- `titulo` — título do livro
-- `autor` — nome do autor
-- `categoria` — ex: Programação, Redes, Matemática
-- `estado` — DISPONIVEL | REQUISITADO
-- `estudanteActual` — quem tem o livro actualmente (null se disponível)
-- `filaEspera` — lista de estudantes a aguardar
+O admin pode exportar 4 relatórios: empréstimos, multas, utilizadores, livros. Os CSVs incluem BOM UTF-8 para compatibilidade com Excel e são servidos via query param `?sid=` para download directo no browser.
 
-**Estudante**
-- `nome` — identificador no sistema (introduzido no login)
-- `socket` — conexão TCP activa (mantida pelo servidor)
+**Conceito de SD:** Acesso privilegiado, controlo de autorização.
 
-**Operação (Log)**
-- `timestamp` — data e hora da operação
-- `tipo` — INSERIR | REQUISITAR | DEVOLVER | CONECTAR | DESCONECTAR
-- `estudante` — quem realizou a operação
-- `livro` — livro envolvido (quando aplicável)
+### 3.10 Notificações por Email (SMTP)
 
-### Regras de Negócio
+O `GestorEmail` envia emails assincronamente via SMTP (thread dedicada). Configuração guardada em JSON. 6 templates HTML: boas-vindas, lembrete, urgente, atraso, multa, recuperação de password.
 
-1. Um livro só pode ser requisitado por um estudante de cada vez
-2. Se um livro está requisitado, o estudante entra automaticamente na fila de espera
-3. Ao devolver, o servidor notifica o primeiro da fila e transfere a requisição automaticamente
-4. Um estudante não pode requisitar o mesmo livro duas vezes (se já está na fila)
-5. Qualquer estudante pode inserir livros no sistema
-6. O mesmo estudante não pode requisitar um livro que já tem
+**Conceito de SD:** Comunicação assíncrona, middleware de mensagens.
 
----
+### 3.11 Motor de Recomendações
 
-## 5. Decisões de Design
+Algoritmo que combina 4 sinais para recomendar livros a cada utilizador:
+1. Categoria favorita (historial de empréstimos)
+2. Avaliação média (≥ 3 estrelas)
+3. Collaborative filtering (co-leitores com gostos semelhantes)
+4. Popularidade global
 
-### Por que Java?
-- Experiência prévia do grupo com Java e Spring Boot
-- `ServerSocket` e `Socket` são APIs maduras e bem documentadas
-- JavaFX oferece GUI nativa sem dependências externas complexas
-- Forte suporte a threads com `ExecutorService` e sincronização
+**Conceito de SD:** Processamento distribuído de dados, personalização.
 
-### Por que ficheiro JSON em vez de base de dados?
-- O projecto é académico e local — não justifica configurar MySQL/PostgreSQL
-- JSON é legível (pode ser mostrado na apresentação)
-- Biblioteca Gson (Google) é leve e simples de usar
-- Persistência é suficiente para o âmbito do projecto
+### 3.12 Log Centralizado de Operações
 
-### Por que TCP em vez de UDP?
-- A comunicação de requisições exige confirmação de entrega
-- TCP garante ordem e integridade das mensagens
-- Mais simples de implementar correctamente para este caso de uso
+Todas as operações são registadas com timestamp em `log.txt`. O admin pode consultar o log em tempo real na interface web.
 
-### Por que protocolo de texto em vez de serialização de objectos?
-- Mais fácil de debugar (pode-se ver as mensagens com netcat/telnet)
-- Mais fácil de explicar na apresentação
-- Independente de versão de classes Java
-- Protocolo claro e documentado separadamente
+**Conceito de SD:** Auditoria, rastreabilidade em sistemas distribuídos.
+
+### 3.13 Transparência de Localização
+
+O cliente (browser) acede ao servidor por IP:porta. O servidor detecta automaticamente o seu IP de rede no arranque e exibe-o no terminal para facilitar o acesso de outros computadores.
+
+**Conceito de SD:** Transparência de localização (transparência de acesso + de localização).
 
 ---
 
-## 6. Limitações Conhecidas
+## 4. Ligação ao Programa de SD
 
-| Limitação | Razão | Impacto |
-|-----------|-------|---------|
-| Sem autenticação real | Âmbito académico | Baixo |
-| Sem encriptação TLS | Rede local/acadêmica | Baixo |
-| Persistência em ficheiro (não DB) | Simplicidade | Baixo |
-| Sem suporte a múltiplos servidores | Âmbito académico | Baixo |
-| Sem sincronização entre réplicas | Âmbito académico | Baixo |
-
----
-
-## 7. O que Este Sistema Demonstra de SD
-
-Este quadro é para usar directamente na apresentação:
-
-| Conceito do Programa | Onde está implementado |
-|---------------------|----------------------|
-| Definição de SD | O sistema apresenta-se como único mas tem servidor + N clientes |
-| Middleware | Camada de protocolo entre cliente e lógica de negócio |
-| Transparência de acesso | Cliente usa os mesmos comandos independentemente da localização |
-| Transparência de localização | Cliente não sabe onde os dados estão fisicamente |
-| Transparência de falha | Reconexão automática do cliente |
-| Arquitectura cliente-servidor | Servidor central, clientes independentes |
-| Comunicação via Sockets | Base da comunicação em rede |
-| Estilo baseado em eventos | Notificações push do servidor para clientes |
-| Concorrência (threads) | Uma thread por cliente no servidor |
-| Sistemas de ficheiros distribuídos | Analogia com NFS — acesso transparente a dados remotos |
+| Tema do Programa | Implementação no Sistema |
+|-----------------|--------------------------|
+| Comunicação por sockets | GestorTCP com ServerSocket Java (TCP 9090) |
+| Protocolos de aplicação | Protocolo de texto TCP + HTTP REST + SSE |
+| Concorrência e threads | synchronized, ExecutorService, ScheduledExecutorService |
+| Sincronização | GestorLivros/GestorUtilizadores com métodos synchronized |
+| Comunicação assíncrona | SSE push + Email SMTP async |
+| Propagação de eventos | Broadcast SSE; notificarTodos() |
+| Transparência de localização | Acesso por IP:porta; auto-detecção de rede |
+| Sessões e estado | Tokens UUID; ConcurrentHashMap sessoes |
+| Persistência | Estado em JSON (sobrevive a reinícios) |
+| Middleware | API REST HTTP; protocolo TCP |

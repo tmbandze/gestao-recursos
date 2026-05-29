@@ -2,29 +2,44 @@
 
 ## 1. Visão Geral
 
-O sistema segue a arquitectura **cliente-servidor** com suporte a múltiplos clientes simultâneos. O servidor é o único ponto de gestão dos dados e da lógica de negócio. Os clientes são interfaces gráficas que comunicam com o servidor via protocolo TCP sobre Sockets.
+O sistema segue a arquitectura **cliente-servidor** com servidor HTTP centralizado e clientes web (browser). A camada de transporte usa **HTTP REST** para operações síncronas e **SSE (Server-Sent Events)** para notificações assíncronas em tempo real. Existe também um canal **TCP** legado (porta 9090) para o cliente JavaFX original.
 
 ```
-┌─────────────────┐         TCP          ┌──────────────────────────────────┐
-│  Cliente A      │ ◄──────────────────► │                                  │
-│  (JavaFX GUI)   │                      │         SERVIDOR CENTRAL          │
-└─────────────────┘                      │                                  │
-                                         │  ┌────────────┐  ┌────────────┐  │
-┌─────────────────┐         TCP          │  │ Thread A   │  │ Thread B   │  │
-│  Cliente B      │ ◄──────────────────► │  │ (Cliente A)│  │ (Cliente B)│  │
-│  (JavaFX GUI)   │                      │  └────────────┘  └────────────┘  │
-└─────────────────┘                      │         │                │        │
-                                         │         ▼                ▼        │
-┌─────────────────┐         TCP          │  ┌─────────────────────────────┐  │
-│  Cliente N      │ ◄──────────────────► │  │     GestorLivros            │  │
-│  (JavaFX GUI)   │                      │  │  (sincronizado, partilhado) │  │
-└─────────────────┘                      │  └──────────────┬──────────────┘  │
-                                         │                 │                  │
-                                         │         ┌───────▼──────┐          │
-                                         │         │  BaseDados   │          │
-                                         │         │  livros.json │          │
-                                         │         └──────────────┘          │
-                                         └──────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│              BROWSER  (cliente web)                 │
+│         HTML5 · CSS3 · JavaScript (SPA)             │
+│                                                     │
+│  fetch() ──── HTTP REST ────────────────────────►  │
+│  EventSource ── SSE ────────────────────────────►  │
+└────────────────────────────────────────────────────►┤
+                                                      │
+              porta 8080                              │
+┌─────────────────────────────────────────────────────┤
+│                  SERVIDOR CENTRAL                   │
+│                  Servidor.java                      │
+│              (Javalin 6 + Jetty)                    │
+│                                                     │
+│  ┌──────────────┐  ┌──────────────┐                │
+│  │ GestorLivros │  │GestorUtiliz. │                │
+│  └──────┬───────┘  └──────┬───────┘                │
+│         │                 │                         │
+│  ┌──────▼────────────────▼──────────────────────┐  │
+│  │              GestorHistorico                 │  │
+│  │  GestorChat  GestorEmail  GestorRecom.       │  │
+│  │  MonitorPrazos  Logger                       │  │
+│  └──────────────────────────┬────────────────────┘  │
+│                             │                       │
+│  ┌──────────────────────────▼────────────────────┐  │
+│  │    Camada de Persistência (JSON + ficheiros)  │  │
+│  │  livros.json · utilizadores.json              │  │
+│  │  emprestimos.json · chat.json                 │  │
+│  │  data/pdfs/ · data/capas/ · log.txt           │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+              porta 9090
+         ┌────────────┐
+         │ GestorTCP  │◄── Cliente JavaFX (legado)
+         └────────────┘
 ```
 
 ---
@@ -34,260 +49,293 @@ O sistema segue a arquitectura **cliente-servidor** com suporte a múltiplos cli
 ### 2.1 Servidor.java — Ponto de Entrada
 
 Responsável por:
-- Iniciar o `ServerSocket` na porta configurada (padrão: 8080)
-- Aguardar conexões de clientes em loop infinito
-- Para cada nova conexão, criar uma `GestorClientes` thread e lançá-la
-- Manter o registo de todos os clientes activos (para broadcast de notificações)
+- Instanciar todos os gestores e injectar dependências
+- Configurar o servidor Javalin (HTTP + SSE, porta 8080)
+- Registar todos os endpoints REST
+- Gerir o mapa de sessões (`sessionId → nomeUtilizador`)
+- Gerir o mapa de clientes SSE (`nome → SseClient`)
+- Emitir eventos SSE para um utilizador (`notificarUsuario`) ou todos (`notificarTodos`)
+- Detectar o IP de rede local no arranque
 
 ```java
-// Fluxo principal
-ServerSocket serverSocket = new ServerSocket(PORTA);
-while (true) {
-    Socket clienteSocket = serverSocket.accept();
-    GestorClientes handler = new GestorClientes(clienteSocket, gestorLivros, logger);
-    executor.submit(handler);  // ExecutorService com thread pool
-}
+// Sessões em memória (sobrevivem a reconnects SSE)
+Map<String, String>    sessoes     = new ConcurrentHashMap<>();  // sid → nome
+Map<String, SseClient> sseClientes = new ConcurrentHashMap<>();  // nome → SSE
 ```
 
-### 2.2 GestorClientes.java — Thread por Cliente
+### 2.2 GestorLivros.java — Lógica de Livros
 
-Cada cliente conectado tem a sua própria instância desta classe, a correr numa thread separada.
+Todos os métodos que modificam estado são `synchronized`. Responsável por:
+- CRUD de livros (`inserir`, `apagar`, `detalhes`, `listarTodos`)
+- Controlo de múltiplos exemplares (`totalExemplares`, `estudantesActuais`)
+- Requisição com prazo de 7 dias e cálculo de multa na devolução
+- Fila de espera FIFO: promoção automática do próximo ao devolver
+- Upload e persistência de PDFs (`data/pdfs/`)
+- Extracção assíncrona de capas do PDF (`data/capas/`)
+- Análise de conteúdo via `AnalisadorConteudo`
+- Workflow de aprovação (pendente → aprovado/rejeitado)
+- Avaliações e comentários (`avaliar`, `listarAvaliacoes`)
 
-Responsável por:
-- Ler comandos do cliente via `BufferedReader`
-- Interpretar o protocolo (parse do comando)
-- Delegar para `GestorLivros` a lógica de negócio
-- Enviar resposta de volta ao cliente via `PrintWriter`
-- Registar operações no `Logger`
-- Limpar recursos ao desconectar
-
-```java
-// Fluxo por cliente
-public void run() {
-    String linha;
-    while ((linha = entrada.readLine()) != null) {
-        String resposta = processarComando(linha);
-        saida.println(resposta);
-    }
-    // cliente desconectou
-    servidor.removerCliente(this);
-}
-```
-
-### 2.3 GestorLivros.java — Lógica de Negócio
-
-Classe singleton partilhada por todas as threads. **Todos os métodos são sincronizados** para evitar condições de corrida quando múltiplos clientes acedem simultaneamente.
+### 2.3 GestorUtilizadores.java — Gestão de Utilizadores
 
 Responsável por:
-- CRUD de livros
-- Controlo de disponibilidade
-- Gestão da fila de espera (FIFO por livro)
-- Notificação do próximo da fila quando um livro é devolvido
-- Listagem e pesquisa
+- Registo com hash SHA-256 + salt aleatório (16 bytes)
+- Login por email + password
+- Recuperação de password (token de 8 caracteres, TTL 2h)
+- Bloqueio/desbloqueio e sistema de avisos
+- Multas: `adicionarMulta`, `perdoarMulta`, `listarMultas`
+- Métodos de consulta: `getEmailPorNome`, `getNomePorEmail`, `getTokenRecuperacao`
 
-```java
-public synchronized String requisitar(String idLivro, GestorClientes cliente) {
-    Livro livro = baseDados.buscar(idLivro);
-    if (livro.isDisponivel()) {
-        livro.requisitar(cliente.getNome());
-        baseDados.guardar();
-        notificarTodos("ATUALIZAR"); // broadcast para todos os clientes
-        return "OK|Livro requisitado com sucesso";
-    } else {
-        livro.adicionarFila(cliente);
-        return "OK|Adicionado à fila de espera (posição " + livro.posicaoNaFila(cliente) + ")";
-    }
-}
-```
+### 2.4 GestorHistorico.java — Histórico de Empréstimos
 
-### 2.4 BaseDados.java — Persistência
+Persiste todos os empréstimos em `emprestimos.json`. Métodos:
+- `registarInicio(idLivro, titulo, estudante, dataInicio, prazo)`
+- `registarFim(idLivro, estudante, dataFim)`
+- `porEstudante(nome)` — histórico pessoal ordenado por data
+- `emprestimosActivos()` — empréstimos sem `dataFim` (usado pelo MonitorPrazos)
+- `listarTodos()` — todos os registos (para CSV)
 
-Responsável por:
-- Ler e escrever o ficheiro `livros.json`
-- Serializar/deserializar objectos `Livro` com Gson
-- Garantir que os dados são guardados após cada operação
+### 2.5 GestorChat.java — Chat em Tempo Real
 
-### 2.5 Logger.java — Log de Operações
+Persiste mensagens em `chat.json` (máx. 500). Métodos:
+- `enviar(de, para, texto)` — global (`para=null`) ou privada
+- `listarGlobal(n)` — últimas n mensagens globais
+- `listarPrivada(u1, u2, n)` — conversa entre dois utilizadores
+- `interlocutoresDoAdmin()` — lista de utilizadores com conversas com o admin
 
-Responsável por:
-- Escrever uma linha por operação em `log.txt`
-- Formato: `[timestamp] TIPO | estudante | livro`
-- Thread-safe (métodos sincronizados)
+### 2.6 GestorEmail.java — Notificações por Email
+
+Envia emails via SMTP de forma assíncrona (thread dedicada). Config em `email-config.json`. Templates HTML para:
+- Boas-vindas no registo
+- Lembrete 1 dia antes do prazo
+- Urgente no próprio dia do prazo
+- Atraso com multa estimada
+- Multa aplicada na devolução
+- Token de recuperação de password
+
+### 2.7 GestorRecomendacoes.java — Motor de Recomendações
+
+Combina 4 sinais para calcular um score por livro candidato:
+
+| Sinal | Peso máx | Fonte de dados |
+|-------|----------|----------------|
+| Categoria favorita | 5.0 | Histórico do utilizador |
+| Avaliação média | 4.0 | `Livro.mediaEstrelas()` |
+| Collaborative filtering | 4.0 | Co-leitores com histórico comum |
+| Popularidade global | 2.0 | Total de empréstimos por livro |
+
+### 2.8 MonitorPrazos.java — Monitor Automático
+
+`ScheduledExecutorService` que verifica prazos **de 30 em 30 segundos no arranque e depois de hora em hora**:
+- 1 dia antes: lembrete (SSE + email)
+- No dia do prazo: urgente (SSE + email)
+- Após o prazo: alerta com multa estimada (SSE + email, repetido a cada hora)
+
+### 2.9 GestorTCP.java — Canal TCP (porta 9090)
+
+Canal legado para o cliente JavaFX. Gere uma thread por cliente, interpreta o protocolo de texto (`LISTAR`, `REQUISITAR|id`, etc.) e delega para `GestorLivros` e `GestorUtilizadores`.
 
 ---
 
-## 3. Componentes do Cliente
+## 3. API REST
 
-### 3.1 MainApp.java — Ponto de Entrada JavaFX
+### Autenticação
 
-Inicializa a aplicação JavaFX, carrega o FXML e lança a janela principal.
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/registar` | Criar conta |
+| POST | `/api/login` | Iniciar sessão → devolve `sessionId` |
+| POST | `/api/logout` | Terminar sessão |
+| POST | `/api/recuperar-password` | Pedir token de recuperação |
+| POST | `/api/reset-password` | Redefinir password com token |
 
-### 3.2 Cliente.java — Conexão TCP
+### Livros
 
-Responsável por:
-- Estabelecer conexão TCP ao servidor (com retry até 5 tentativas)
-- Ler `config.properties` para obter host e porta
-- Enviar comandos via `PrintWriter`
-- Expor `BlockingQueue<String> respostas` para receber respostas síncronas
-- `enviar(String comando)`: envia e bloqueia até 10 segundos à espera da resposta
-- `receberResposta(String msg)`: chamado pela `NotificacaoService` para desbloquear o `poll()`
-- `drenaFila()`: limpa respostas residuais antes de ciclos de actualização do painel admin
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/api/livros` | Catálogo público (sem pendentes) |
+| GET | `/api/livros/pesquisa?q=` | Pesquisa por título/autor/categoria |
+| GET | `/api/livros/{id}` | Detalhes + avaliações |
+| POST | `/api/livros` | Adicionar livro (multipart: titulo, autor, categoria, pdf) |
+| DELETE | `/api/livros/{id}` | Apagar livro (admin) |
+| POST | `/api/livros/{id}/requisitar` | Requisitar / entrar na fila |
+| POST | `/api/livros/{id}/devolver` | Devolver |
+| POST | `/api/livros/{id}/avaliar` | Avaliar (1-5 estrelas) |
+| GET | `/api/livros/{id}/pdf` | Download do PDF |
+| GET | `/api/livros/{id}/capa` | Imagem de capa (JPEG) |
 
-### 3.3 NotificacaoService.java — Leitor Único do Socket
+### Admin
 
-Thread dedicada que é o **único leitor** do `InputStream` do socket. Faz o encaminhamento das mensagens recebidas:
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/api/admin/utilizadores` | Lista completa com estados |
+| POST | `/api/admin/bloquear` | Bloquear utilizador |
+| POST | `/api/admin/desbloquear` | Desbloquear utilizador |
+| POST | `/api/admin/avisar` | Adicionar aviso |
+| POST | `/api/admin/perdoar-multa` | Perdoar multa |
+| GET | `/api/admin/pendentes` | Livros aguardando aprovação |
+| POST | `/api/admin/aprovar/{id}` | Aprovar livro |
+| POST | `/api/admin/rejeitar/{id}` | Rejeitar livro |
+| GET | `/api/admin/relatorio/{tipo}.csv` | Exportar CSV (emprestimos/multas/utilizadores/livros) |
+| GET | `/api/admin/email/config` | Ler config SMTP |
+| POST | `/api/admin/email/config` | Guardar config SMTP |
+| POST | `/api/admin/email/testar` | Enviar email de teste |
 
-```
-NOTIFICACAO|texto  →  Platform.runLater(controlador.mostrarNotificacao)
-ATUALIZAR          →  Platform.runLater(controlador.notificarAtualizacao)
-qualquer outra     →  cliente.receberResposta(msg)  — desbloqueia o enviar()
-```
+### Chat e Recomendações
 
-```java
-public void run() {
-    String mensagem;
-    while (ativo && (mensagem = entrada.readLine()) != null) {
-        final String msg = mensagem;
-        if (msg.startsWith(Protocolo.NOTIFICACAO + "|")) {
-            String texto = msg.substring(Protocolo.NOTIFICACAO.length() + 1);
-            Platform.runLater(() -> controlador.mostrarNotificacao(texto));
-        } else if (msg.equals(Protocolo.ATUALIZAR)) {
-            Platform.runLater(() -> controlador.notificarAtualizacao());
-        } else {
-            cliente.receberResposta(msg);  // resposta síncrona
-        }
-    }
-}
-```
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/api/chat/mensagens?para=` | Mensagens globais ou privadas |
+| POST | `/api/chat/enviar` | Enviar mensagem |
+| GET | `/api/recomendacoes?max=` | Recomendações personalizadas |
 
-### 3.4 ControladorPrincipal.java — Lógica da Interface Principal
+### SSE
 
-Responsável por:
-- Pedir login e iniciar a conexão ao servidor
-- Ligar eventos da GUI (botões) a chamadas ao servidor
-- Actualizar a `TableView` de livros e o painel de detalhes
-- Mostrar notificações no painel de texto
-- Ao receber `ATUALIZAR`: recarregar livros **e** notificar o `AdminPanel` (se aberto)
-- Mostrar/esconder o botão Admin consoante o utilizador
-
-### 3.5 AdminPanel.java — Painel de Administração
-
-Janela separada (não-modal) disponível apenas para o utilizador `admin`. Contém três abas:
-
-| Aba | Conteúdo | Fonte |
-|-----|----------|-------|
-| Utilizadores Online | `ListView` com nome e IP | `ADMIN_USUARIOS` |
-| Livros do Sistema | `TableView` com estado, requisitante e fila | `ADMIN_SISTEMA` |
-| Log de Operações | `TextArea` monospace com últimas entradas | `HISTORICO` |
-
-Actualiza-se automaticamente quando o servidor emite `ATUALIZAR` (via `notificarAtualizacao()` em cadeia).
+| Endpoint | Evento | Payload |
+|----------|--------|---------|
+| `GET /api/sse` | `atualizacao` | Tipo de operação |
+| | `utilizadores_update` | `login` ou `logout` |
+| | `notificacao` | Texto livre |
+| | `multa_update` | `nova_multa:nome:valor` |
+| | `chat_mensagem` | JSON `MensagemChat` (global) |
+| | `chat_priv` | JSON `MensagemChat` (privada) |
+| | `pendente_update` | Estado do livro pendente |
+| | `recuperacao_update` | Email do utilizador |
 
 ---
 
 ## 4. Modelo de Dados
 
-### Livro (livros.json)
+### livros.json
 
 ```json
 {
-  "livros": [
-    {
-      "id": "uuid-1234",
-      "titulo": "Sistemas Distribuídos — Tanenbaum",
-      "autor": "Andrew Tanenbaum",
-      "categoria": "Sistemas Distribuídos",
-      "estado": "REQUISITADO",
-      "estudanteActual": "João",
-      "filaEspera": ["Maria", "Pedro"],
-      "dataInsercao": "2026-05-01T10:00:00"
-    }
-  ]
+  "id": "uuid",
+  "titulo": "Sistemas Distribuídos",
+  "autor": "Tanenbaum",
+  "categoria": "Redes",
+  "estado": "REQUISITADO",
+  "totalExemplares": 2,
+  "estudantesActuais": ["João"],
+  "prazosEstudantes": {"João": "2026-06-05"},
+  "filaEspera": ["Maria"],
+  "temPdf": true,
+  "pendente": false,
+  "flagAdmin": false,
+  "avaliacoes": [{"utilizador":"João","estrelas":5,"comentario":"Excelente!"}]
 }
 ```
 
-### Log (log.txt)
+### utilizadores.json
 
+```json
+{
+  "id": "uuid",
+  "nome": "João",
+  "email": "joao@email.com",
+  "salt": "hex-16-bytes",
+  "passwordHash": "sha256(salt+password)",
+  "bloqueado": false,
+  "avisos": 0,
+  "multaTotal": 1.50,
+  "multas": [{"tituloLivro":"X","diasAtraso":3,"valor":1.50,"data":"2026-05-20"}]
+}
 ```
-[2026-05-01 10:00:00] CONECTAR    | João   | -
-[2026-05-01 10:01:15] INSERIR     | João   | Sistemas Distribuídos — Tanenbaum
-[2026-05-01 10:02:30] REQUISITAR  | Maria  | Sistemas Distribuídos — Tanenbaum
-[2026-05-01 10:05:00] DEVOLVER    | Maria  | Sistemas Distribuídos — Tanenbaum
-[2026-05-01 10:05:01] NOTIFICAR   | Sistema| João — livro disponível
+
+### emprestimos.json
+
+```json
+{
+  "id": "uuid",
+  "idLivro": "uuid",
+  "tituloLivro": "Sistemas Distribuídos",
+  "estudante": "João",
+  "dataInicio": "2026-05-29",
+  "prazo": "2026-06-05",
+  "dataFim": null
+}
 ```
 
 ---
 
-## 5. Fluxo de Notificação (Feature Principal)
+## 5. Autenticação e Sessões
 
-Este é o fluxo mais importante para demonstrar conceitos de SD:
+O servidor é **stateless por HTTP** mas mantém um `ConcurrentHashMap<String, String>` em memória que mapeia `sessionId → nomeUtilizador`. O token UUID é gerado no login/registo e enviado no header `X-Session-ID` em todos os pedidos autenticados.
 
 ```
-1. Cliente A requisita Livro X → está indisponível
-   Servidor: adiciona A à fila de espera do Livro X
-   Servidor → Cliente A: "OK|Adicionado à fila (posição 1)"
+POST /api/login  →  { "sessionId": "uuid", "nome": "João", "isAdmin": false }
 
-2. Cliente B devolve Livro X
-   Servidor: marca Livro X como disponível
-   Servidor: verifica fila → próximo é Cliente A
-   Servidor: requisita automaticamente para Cliente A
-   Servidor → Cliente A: "NOTIFICACAO|O livro 'X' foi reservado para si!"
-   Servidor → Todos: "ATUALIZAR" (broadcast)
-
-3. Todos os clientes recebem ATUALIZAR e refrescam a lista
+GET  /api/livros/{id}/requisitar
+     Headers: X-Session-ID: uuid
 ```
+
+Para downloads CSV (browser não pode enviar headers custom), o `sid` é aceite também como query param: `?sid=uuid`.
 
 ---
 
-## 6. Tratamento de Concorrência
+## 6. Concorrência
 
-O `GestorLivros` é o recurso partilhado crítico. A sincronização é feita com `synchronized` nos métodos que alteram estado:
+Todos os gestores usam `synchronized` nos métodos que modificam estado. O `GestorLivros` é o recurso mais crítico pois pode ter múltiplas threads a executar em simultâneo:
 
-| Método | Sincronizado | Motivo |
-|--------|-------------|--------|
-| `requisitar()` | Sim | Evita dois clientes requisitarem o mesmo livro |
-| `devolver()` | Sim | Modifica estado e fila de espera |
-| `inserir()` | Sim | Modifica lista de livros |
-| `listar()` | Não | Só leitura — seguro sem lock |
-| `pesquisar()` | Não | Só leitura — seguro sem lock |
+| Método | Motivo do `synchronized` |
+|--------|--------------------------|
+| `requisitar()` | Evita dois clientes requisitarem a última cópia |
+| `devolver()` | Modifica lista de detentores + calcula multa + promove fila |
+| `inserir()` | Adiciona à lista partilhada |
+| `apagar()` | Remove da lista partilhada |
+| `avaliar()` | Modifica lista de avaliações |
 
 ---
 
-## 7. Reconexão Automática (Transparência de Falha)
+## 7. SSE — Notificações em Tempo Real
+
+O browser mantém uma conexão SSE permanente (`/api/sse`). O servidor guarda o `SseClient` em `sseClientes` associado ao nome do utilizador. Quando ocorre um evento, o servidor notifica directamente o(s) cliente(s) relevante(s):
 
 ```java
-private void conectar() {
-    int tentativas = 0;
-    while (tentativas < MAX_TENTATIVAS) {
-        try {
-            socket = new Socket(HOST, PORTA);
-            // conexão bem sucedida
-            return;
-        } catch (IOException e) {
-            tentativas++;
-            Thread.sleep(2000); // espera 2 segundos antes de tentar novamente
-        }
-    }
-    // mostrar erro ao utilizador após N tentativas
+// Notificar um utilizador específico
+public void notificarUsuario(String nome, String dados) {
+    SseClient c = sseClientes.get(nome);
+    if (c != null) c.sendEvent("notificacao", dados);
+}
+
+// Broadcast para todos os conectados
+public void notificarTodos(String evento, String dados, String excluir) {
+    sseClientes.forEach((nome, c) -> {
+        if (!nome.equals(excluir)) c.sendEvent(evento, dados);
+    });
 }
 ```
 
 ---
 
-## 8. Estrutura de Build (Maven Multi-Módulo)
+## 8. Persistência
 
-O projecto é composto por dois módulos Maven independentes, cada um com o seu `pom.xml`:
+Cada gestor tem a sua própria classe `BaseDados*` ou guarda directamente em JSON via Gson. A gravação é sempre síncrona e ocorre imediatamente após cada modificação (sem cache em memória).
 
-| Módulo | Comando de build | JAR produzido | Main class |
-|--------|-----------------|---------------|------------|
-| `servidor/` | `mvn package` | `servidor.jar` (fat jar via shade plugin) | `servidor.Servidor` |
-| `cliente/` | `mvn javafx:run` | — (executado directamente) | `cliente.MainApp` |
+| Ficheiro | Gestor responsável |
+|----------|--------------------|
+| `data/livros.json` | `BaseDados` + `GestorLivros` |
+| `data/utilizadores.json` | `BaseDadosUtilizadores` + `GestorUtilizadores` |
+| `data/emprestimos.json` | `GestorHistorico` |
+| `data/chat.json` | `GestorChat` |
+| `data/email-config.json` | `GestorEmail` |
+| `data/log.txt` | `Logger` |
+| `data/pdfs/{id}.pdf` | `GestorLivros` |
+| `data/capas/{id}.jpg` | `GestorLivros` (extracção assíncrona) |
+
+---
 
 ## 9. Dependências
 
-| Biblioteca | Versão | Módulo | Uso |
-|------------|--------|--------|-----|
-| Java SE | 17+ | ambos | Linguagem base, ServerSocket, Threads |
-| JavaFX | 23 | cliente | Interface gráfica (controls, fxml) |
-| Gson | 2.10.1 | servidor | Serialização JSON para `livros.json` |
+| Biblioteca | Versão | Uso |
+|------------|--------|-----|
+| Java SE | 17 | Linguagem, threads, crypto, sockets |
+| Javalin | 6.1.6 | Servidor HTTP + SSE + routing |
+| Gson | 2.10.1 | Serialização JSON (persistência) |
+| Jackson Databind | 2.17.0 | Serialização JSON (respostas HTTP) |
+| SLF4J Simple | 2.0.13 | Logging interno do Jetty/Javalin |
+| Apache PDFBox | 3.0.3 | Extracção de capa (1ª página do PDF) |
+| Jakarta Mail (Angus) | 2.0.3 | Envio de emails via SMTP |
+| Apache Maven | 3.8+ | Build + gestão de dependências |
 
-Todas as dependências são geridas via **Maven** (`pom.xml` de cada módulo).
+O servidor é empacotado como um **fat JAR** via `maven-shade-plugin`, incluindo todas as dependências.

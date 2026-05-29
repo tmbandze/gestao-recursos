@@ -5,20 +5,18 @@
 | Software | Versão Mínima | Como verificar |
 |----------|--------------|----------------|
 | Java JDK | 17 | `java -version` |
-| JavaFX SDK | 17 | Incluído no pom.xml via Maven |
 | Maven | 3.8+ | `mvn -version` |
+| Browser moderno | — | Chrome, Firefox, Edge (qualquer versão recente) |
+
+> **Nota:** não é necessário instalar JavaFX, Node.js, nem nenhum outro software.  
+> O cliente é uma página web servida pelo próprio servidor.
 
 ---
 
-## 1. Clonar / Obter o Projecto
+## 1. Obter o Projecto
 
 ```bash
-# Se estiver no GitLab
-git clone https://gitlab.com/grupo/gestao-recursos.git
-cd gestao-recursos
-
-# Ou descompactar o ZIP entregue
-unzip gestao-recursos.zip
+git clone https://github.com/tmbandze/gestao-recursos.git
 cd gestao-recursos
 ```
 
@@ -27,84 +25,128 @@ cd gestao-recursos
 ## 2. Compilar
 
 ```bash
+cd servidor
 mvn clean package
 ```
 
-Isto gera dois ficheiros JAR na pasta `target/`:
-- `servidor.jar` — o servidor
-- `cliente.jar` — o cliente
+Gera `servidor/target/servidor.jar` (fat JAR com todas as dependências incluídas).
+
+**Primeira compilação:** pode demorar 2-3 minutos enquanto o Maven descarrega as dependências. Compilações seguintes são muito mais rápidas.
 
 ---
 
-## 3. Executar
-
-### Passo 1 — Iniciar o Servidor (sempre primeiro)
+## 3. Executar o Servidor
 
 ```bash
-# Numa janela de terminal
 java -jar target/servidor.jar
 ```
 
-Deverá aparecer:
+Deverá aparecer no terminal:
+
 ```
-[INFO] Servidor iniciado na porta 8080
-[INFO] A aguardar conexões...
+╔══════════════════════════════════════════════════════════════╗
+║  Servidor de Gestão de Recursos — Biblioteca Digital         ║
+║  HTTP/SSE  : http://localhost:8080                           ║
+║  TCP       : localhost:9090                                  ║
+║  Rede      : http://192.168.x.x:8080                        ║
+╚══════════════════════════════════════════════════════════════╝
+[MONITOR] Monitor de prazos iniciado (verifica de hora em hora).
 ```
 
-### Passo 2 — Iniciar o(s) Cliente(s)
+---
 
+## 4. Aceder à Aplicação
+
+Abrir o browser em **http://localhost:8080**
+
+### Conta admin pré-criada
+
+| Campo | Valor |
+|-------|-------|
+| Email | `admin@biblioteca.local` |
+| Password | `admin123` |
+
+> A conta admin é criada automaticamente se não existir nenhuma conta com o nome "admin".
+
+### Criar conta de estudante
+
+Clicar em **Criar conta** na página inicial e preencher nome, email e password (mínimo 6 caracteres).
+
+---
+
+## 5. Aceder de Outro Computador na Mesma Rede
+
+O servidor exibe o seu IP de rede local no arranque (`Rede: http://192.168.x.x:8080`).  
+Qualquer computador na mesma rede Wi-Fi/Ethernet pode abrir esse endereço no browser.
+
+Para encontrar manualmente o IP:
 ```bash
-# Noutra janela de terminal (ou noutro computador)
-java -jar target/cliente.jar
-```
+# Windows
+ipconfig
 
-A interface gráfica abrirá e pedirá o nome do estudante.
-
-Para testar múltiplos clientes em simultâneo, abrir múltiplas janelas de terminal e executar o cliente em cada uma.
-
----
-
-## 4. Configuração
-
-Por defeito, o cliente conecta a `localhost:8080`. Para alterar (ex: servidor noutro computador):
-
-Editar `src/main/resources/config.properties`:
-```properties
-servidor.host=192.168.1.100
-servidor.porta=8080
+# Linux / macOS
+ip addr   # ou ifconfig
 ```
 
 ---
 
-## 5. Estrutura de Dados
+## 6. Estrutura de Dados
 
 O servidor cria automaticamente a pasta `data/` com:
-- `livros.json` — base de dados de livros
-- `log.txt` — log de operações
 
-Estes ficheiros persistem entre execuções. Para começar do zero, apagar a pasta `data/`.
+```
+servidor/data/
+├── livros.json          # Catálogo de livros
+├── utilizadores.json    # Contas de utilizadores (passwords em hash)
+├── emprestimos.json     # Histórico de empréstimos
+├── chat.json            # Mensagens do chat
+├── email-config.json    # Configuração SMTP (criado após configurar)
+├── log.txt              # Log de operações com timestamp
+├── pdfs/                # Ficheiros PDF enviados
+└── capas/               # Capas geradas automaticamente dos PDFs
+```
+
+Estes ficheiros persistem entre reinícios. Para começar do zero, apagar a pasta `data/`.
 
 ---
 
-## 6. Resolução de Problemas
+## 7. Configurar Notificações por Email (opcional)
 
-**`Connection refused` no cliente**
-→ O servidor não está a correr. Iniciar o servidor primeiro.
+1. Fazer login como **admin**
+2. No painel lateral → **📧 Notificações por Email**
+3. Preencher:
+   - SMTP: `smtp.gmail.com`
+   - Porta: `587`
+   - Utilizador: endereço Gmail
+   - Password: [App Password do Google](https://myaccount.google.com/apppasswords) *(requer 2FA activo)*
+   - Marcar **Activar**
+4. Clicar **💾 Guardar** e depois **📤 Enviar teste**
 
-**`Address already in use`**
-→ A porta 8080 está ocupada.
+---
+
+## 8. Resolução de Problemas
+
+### `Address already in use: 8080`
+A porta está ocupada por outro processo.
 ```bash
-# No Windows
+# Windows — encontrar o PID
 netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 
-# No Linux/Mac
+# Linux / macOS
 lsof -i :8080
 kill -9 <PID>
 ```
 
-**Interface gráfica não abre (Linux)**
-→ Pode ser necessário instalar JavaFX separadamente:
+### Browser mostra página em branco ou erro 404
+Verificar se o servidor foi iniciado com `java -jar target/servidor.jar` a partir da pasta `servidor/` (não a partir da raiz do projecto). O servidor precisa de encontrar `data/` no directório de trabalho.
+
+### Encoding incorrecto nos CSVs exportados (acentuação)
+Os CSVs incluem BOM UTF-8. Se o Excel mostrar caracteres incorrectos, abrir o Excel, usar **Dados → De Texto/CSV** e seleccionar `UTF-8` como codificação.
+
+### `BUILD FAILURE` no Maven
 ```bash
-sudo apt install openjfx
+# Limpar cache de dependências corrompidas
+mvn dependency:purge-local-repository
+mvn clean package
 ```

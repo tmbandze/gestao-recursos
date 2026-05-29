@@ -12,7 +12,10 @@ import shared.MensagemChat;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -483,8 +486,14 @@ public class Servidor {
         });
 
         app.start(PORTA);
-        System.out.println("[INFO] Servidor web iniciado em http://0.0.0.0:" + PORTA);
-        System.out.println("[INFO] Partilha com colegas: http://<SEU_IP>:" + PORTA);
+        String ipLocal = detectarIpLocal();
+        System.out.println();
+        System.out.println("╔══════════════════════════════════════════════════════════════╗");
+        System.out.println("║  SERVIDOR INICIADO                                           ║");
+        System.out.printf( "║  Local    : http://localhost:%d                          ║%n", PORTA);
+        System.out.printf( "║  Rede     : http://%-41s║%n", ipLocal + ":" + PORTA + "  ");
+        System.out.println("╚══════════════════════════════════════════════════════════════╝");
+        System.out.println("  → Partilha o link de rede com os teus colegas");
 
         // ── Serviços auxiliares ───────────────────────────────────────
         gestorTCP.iniciar();
@@ -516,6 +525,32 @@ public class Servidor {
     private static String str(Map<String, Object> m, String k) {
         Object v = m.get(k);
         return v != null ? v.toString().trim() : "";
+    }
+
+    /** Detecta o IP local na rede (exclui loopback e interfaces virtuais). */
+    private static String detectarIpLocal() {
+        try {
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                String nome = ni.getDisplayName().toLowerCase();
+                if (nome.contains("vmware") || nome.contains("virtualbox")
+                        || nome.contains("hyper-v") || nome.contains("wsl")
+                        || nome.contains("bluetooth") || nome.contains("virtual")) continue;
+                for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                    if (addr instanceof java.net.Inet4Address && !addr.getHostAddress().startsWith("127."))
+                        return addr.getHostAddress();
+                }
+            }
+            // Fallback: qualquer IPv4 não-loopback
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                    if (addr instanceof java.net.Inet4Address && !addr.getHostAddress().startsWith("127."))
+                        return addr.getHostAddress();
+                }
+            }
+        } catch (Exception ignored) {}
+        return "localhost";
     }
 
     public static void main(String[] args) {

@@ -109,6 +109,7 @@ function mostrarMain() {
   }
 
   carregarLivros();
+  carregarRecomendacoes();
   ligarSSE();
   iniciarChat();
 }
@@ -139,6 +140,16 @@ async function api(path, method = 'GET', body = null) {
   } catch {
     return { erro: 'Erro de ligação ao servidor' };
   }
+}
+
+/** Fetch com autenticação que lança excepção em caso de erro HTTP. */
+async function apiFetch(path, opts = {}) {
+  const h = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (sessionId) h['X-Session-ID'] = sessionId;
+  const res = await fetch(path, { ...opts, headers: h });
+  const data = await res.json().catch(() => ({ erro: res.statusText }));
+  if (!res.ok) throw new Error(data.erro || data.mensagem || res.statusText);
+  return data;
 }
 
 async function apiForm(path, formData) {
@@ -203,6 +214,49 @@ function ligarSSE() {
     } catch {}
   });
   sse.onerror = () => {};
+}
+
+// ── Recomendações ────────────────────────────────────────────────────────
+
+async function carregarRecomendacoes() {
+  try {
+    const lista = await api('/api/recomendacoes?max=10');
+    const sec    = document.getElementById('rec-section');
+    const scroll = document.getElementById('rec-scroll');
+    if (!Array.isArray(lista) || lista.length === 0) {
+      sec.style.display = 'none'; return;
+    }
+    scroll.innerHTML = '';
+    lista.forEach(l => {
+      const card = document.createElement('div');
+      card.className = 'rec-card';
+      card.onclick = () => abrirDetalhes(l.id);
+
+      const disp  = l.copiasDisponiveis > 0;
+      const stars = l.mediaEstrelas > 0
+        ? '⭐ ' + l.mediaEstrelas.toFixed(1) + (l.numAvaliacoes ? ' (' + l.numAvaliacoes + ')' : '')
+        : '';
+
+      card.innerHTML = `
+        <div class="rec-disp ${disp ? 'verde' : 'cinza'}" title="${disp ? 'Disponível' : 'Indisponível'}"></div>
+        <div class="rec-cat">${esc(l.categoria)}</div>
+        <div class="rec-titulo">${esc(l.titulo)}</div>
+        <div class="rec-autor">${esc(l.autor)}</div>
+        <div class="rec-motivo">${esc(l.motivo)}</div>
+        ${stars ? `<div class="rec-stars">${stars}</div>` : ''}
+      `;
+      scroll.appendChild(card);
+    });
+    sec.style.display = 'block';
+  } catch(e) {
+    document.getElementById('rec-section').style.display = 'none';
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── Livros ──────────────────────────────────────────────────────────────
@@ -457,6 +511,7 @@ async function acaoLivro(id, acao) {
     toast(r.mensagem, 'ok');
   }
   carregarLivros();
+  carregarRecomendacoes(); // actualizar recomendações após requisitar/devolver
 }
 
 // ── Adicionar livro ─────────────────────────────────────────────────────

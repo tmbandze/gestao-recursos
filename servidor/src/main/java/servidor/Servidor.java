@@ -30,9 +30,10 @@ public class Servidor {
     private final Logger             logger;
     private final GestorTCP          gestorTCP;
     private final MonitorPrazos      monitorPrazos;
-    private final GestorChat         gestorChat;
-    private final GestorEmail        gestorEmail;
-    private final Gson               gson = new GsonBuilder().create();
+    private final GestorChat             gestorChat;
+    private final GestorEmail            gestorEmail;
+    private final GestorRecomendacoes    gestorRec;
+    private final Gson                   gson = new GsonBuilder().create();
     private final Map<String, String>    sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
 
@@ -45,6 +46,7 @@ public class Servidor {
         gestorTCP          = new GestorTCP(gestorLivros, gestorUtilizadores, gestorHistorico, logger);
         monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger, gestorEmail, gestorUtilizadores);
         gestorChat         = new GestorChat();
+        gestorRec          = new GestorRecomendacoes(gestorHistorico, gestorLivros);
         // Injectar dependências no gestor de livros
         gestorLivros.setGestorTCP(gestorTCP);
         gestorLivros.setGestorUtilizadores(gestorUtilizadores);
@@ -125,6 +127,14 @@ public class Servidor {
         app.get("/api/livros/pesquisa", ctx -> {
             String q = ctx.queryParam("q");
             ctx.json(gestorLivros.pesquisar(q != null ? q : ""));
+        });
+
+        app.get("/api/recomendacoes", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            int max = 8;
+            try { String p = ctx.queryParam("max"); if (p != null) max = Math.min(20, Integer.parseInt(p)); }
+            catch (Exception ignored) {}
+            ctx.json(gestorRec.recomendar(nome, max));
         });
 
         app.get("/api/livros/{id}", ctx ->

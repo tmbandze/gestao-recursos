@@ -103,6 +103,7 @@ function mostrarMain() {
   if (isAdmin) {
     recarregarLog(); carregarUtilizadores(); carregarMultas();
     carregarPendentes(); carregarSuspeitos(); carregarRecuperacoes();
+    emailCarregarConfig();
   } else {
     verificarMulta();
   }
@@ -1217,6 +1218,64 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') pdfNextPage();
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   pdfPrevPage();
 });
+
+// ── Email Config ────────────────────────────────────────────────────────
+
+async function emailCarregarConfig() {
+  try {
+    const r = await apiFetch('/api/admin/email/config');
+    document.getElementById('email-smtp').value  = r.smtp  || '';
+    document.getElementById('email-porta').value = r.porta || 587;
+    document.getElementById('email-user').value  = r.utilizador || '';
+    document.getElementById('email-pwd').value   = r.passwordMask || '';
+    document.getElementById('email-nome').value  = r.nomeRemetente || '';
+    document.getElementById('email-ssl').checked   = !!r.ssl;
+    document.getElementById('email-ativo').checked  = !!r.ativo;
+    const badge = document.getElementById('email-status-badge');
+    if (r.ativo && r.utilizador) {
+      badge.textContent = '✅ Activo';
+      badge.style.background = 'var(--green-bg)';
+      badge.style.color      = 'var(--green)';
+    } else {
+      badge.textContent = '⛔ Inactivo';
+      badge.style.background = 'var(--surface)';
+      badge.style.color      = 'var(--ink-m)';
+    }
+  } catch(e) { /* silencioso — admin pode não ter config ainda */ }
+}
+
+async function emailGuardarConfig() {
+  const body = {
+    smtp:          document.getElementById('email-smtp').value.trim(),
+    porta:         parseInt(document.getElementById('email-porta').value) || 587,
+    utilizador:    document.getElementById('email-user').value.trim(),
+    password:      document.getElementById('email-pwd').value,
+    nomeRemetente: document.getElementById('email-nome').value.trim() || 'Biblioteca Digital',
+    ssl:           document.getElementById('email-ssl').checked,
+    ativo:         document.getElementById('email-ativo').checked,
+  };
+  try {
+    const r = await apiFetch('/api/admin/email/config', { method:'POST', body: JSON.stringify(body) });
+    toast(r.mensagem || 'Configuração guardada!', 'ok');
+    emailCarregarConfig();
+  } catch(e) { toast('Erro ao guardar configuração', 'erro'); }
+}
+
+async function emailTestar() {
+  const para = document.getElementById('email-user').value.trim();
+  try {
+    const r = await apiFetch('/api/admin/email/testar', {
+      method: 'POST',
+      body: JSON.stringify({ para })
+    });
+    toast(r.mensagem || 'Email enviado!', 'ok');
+  } catch(e) { toast('Falha ao enviar: ' + (e.message || e), 'erro'); }
+}
+
+function emailToggleDicas() {
+  const d = document.getElementById('email-dicas');
+  d.style.display = d.style.display === 'none' ? 'block' : 'none';
+}
 
 // ── Exportar CSV ────────────────────────────────────────────────────────
 

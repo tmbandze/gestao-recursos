@@ -10,18 +10,18 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Monitoriza prazos de devolução e envia notificações push aos utilizadores:
+ * Monitoriza prazos de devolução e envia notificações push (SSE/TCP) e por email:
  *  - 1 dia antes do prazo: lembrete
  *  - No próprio dia do prazo: aviso urgente
  *  - Após o prazo: notificação de atraso (repete a cada hora enquanto o livro não for devolvido)
- *
- * Também notifica o admin sobre atrasos em curso.
  */
 public class MonitorPrazos {
 
     private final GestorHistorico        gestorHistorico;
     private final GestorTCP              gestorTCP;
     private final Logger                 logger;
+    private final GestorEmail            gestorEmail;
+    private final GestorUtilizadores     gestorUtilizadores;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "monitor-prazos");
@@ -29,22 +29,23 @@ public class MonitorPrazos {
         return t;
     });
 
-    public MonitorPrazos(GestorHistorico gestorHistorico, GestorTCP gestorTCP, Logger logger) {
-        this.gestorHistorico = gestorHistorico;
-        this.gestorTCP       = gestorTCP;
-        this.logger          = logger;
+    public MonitorPrazos(GestorHistorico gestorHistorico, GestorTCP gestorTCP,
+                         Logger logger, GestorEmail gestorEmail,
+                         GestorUtilizadores gestorUtilizadores) {
+        this.gestorHistorico    = gestorHistorico;
+        this.gestorTCP          = gestorTCP;
+        this.logger             = logger;
+        this.gestorEmail        = gestorEmail;
+        this.gestorUtilizadores = gestorUtilizadores;
     }
 
     /** Inicia o monitor: verifica imediatamente e depois de hora em hora. */
     public void iniciar() {
-        // Primeira verificação 30 segundos depois do arranque (servidor a estabilizar)
         scheduler.scheduleAtFixedRate(this::verificar, 30, 3600, TimeUnit.SECONDS);
         System.out.println("[MONITOR] Monitor de prazos iniciado (verifica de hora em hora).");
     }
 
-    public void parar() {
-        scheduler.shutdownNow();
-    }
+    public void parar() { scheduler.shutdownNow(); }
 
     // ── Lógica de verificação ─────────────────────────────────────────────
 
@@ -57,11 +58,9 @@ public class MonitorPrazos {
             System.err.println("[MONITOR] Erro ao carregar empréstimos: " + e.getMessage());
             return;
         }
-
         for (Emprestimo emp : activos) {
-            try {
-                processarEmprestimo(emp, hoje);
-            } catch (Exception e) {
+            try { processarEmprestimo(emp, hoje); }
+            catch (Exception e) {
                 System.err.println("[MONITOR] Erro ao processar " + emp.getId() + ": " + e.getMessage());
             }
         }
@@ -69,14 +68,16 @@ public class MonitorPrazos {
 
     private void processarEmprestimo(Emprestimo emp, LocalDate hoje) {
         LocalDate prazo;
-        try {
-            prazo = LocalDate.parse(emp.getPrazo());
-        } catch (Exception e) {
-            return; // prazo inválido
-        }
+        try { prazo = LocalDate.parse(emp.getPrazo()); }
+        catch (Exception e) { return; }
 
-        long diasAtraso    = ChronoUnit.DAYS.between(prazo, hoje);  // positivo = atrasado
-        long diasRestantes = ChronoUnit.DAYS.between(hoje, prazo);  // positivo = dias que faltam
+        long diasAtraso    = ChronoUnit.DAYS.between(prazo, hoje);   // positivo = atrasado
+        long diasRestantes = ChronoUnit.DAYS.between(hoje, prazo);   // positivo = dias que faltam
+
+        String estudante  = emp.getEstudante();
+        String titulo     = emp.getTituloLivro();
+        String prazoFmt   = formatarData(emp.getPrazo());
+        String emailUser  = gestorEmail != null ? gestorUtilizadores.getEmailPorNome(estudante) : null;
 
         if (diasAtraso > 0) {
             // ── Livro em atraso ──────────────────────────────────────────
@@ -84,29 +85,45 @@ public class MonitorPrazos {
             String msgEstudante = String.format(
                 "⚠  ATRASO: O livro \"%s\" deveria ter sido devolvido há %d dia(s)! " +
                 "Multa estimada: %.2f€. Prazo era: %s. Por favor devolva imediatamente.",
-                emp.getTituloLivro(), diasAtraso, multaEstimada, formatarData(emp.getPrazo()));
+                titulo, diasAtraso, multaEstimada, prazoFmt);
 
-            gestorTCP.notificarUtilizador(emp.getEstudante(), msgEstudante);
-
-            // Notificar admin (somente se estiver conectado)
+            gestorTCP.notificarUtilizador(estudante, msgEstudante);
             gestorTCP.notificarUtilizador("admin", String.format(
                 "📋 Atraso: %s — \"%s\" (%d dia(s), multa est. %.2f€)",
-                emp.getEstudante(), emp.getTituloLivro(), diasAtraso, multaEstimada));
+                estudante, titulo, diasAtraso, multaEstimada));
+            logger.registar("ATRASO", estudante,
+                titulo + " (" + diasAtraso + "d, " + String.format("%.2f", multaEstimada) + "€)");
 
-            logger.registar("ATRASO", emp.getEstudante(),
-                emp.getTituloLivro() + " (" + diasAtraso + "d, " + String.format("%.2f", multaEstimada) + "€)");
+            // Email de atraso
+            if (emailUser != null && gestorEmail.isConfigurado()) {
+                gestorEmail.enviarAsync(emailUser,
+                    "⚠️ Livro em atraso — \"" + titulo + "\"",
+                    gestorEmail.htmlAtraso(estudante, titulo, diasAtraso, multaEstimada));
+            }
 
         } else if (diasRestantes == 0) {
             // ── Devolução hoje ───────────────────────────────────────────
-            gestorTCP.notificarUtilizador(emp.getEstudante(), String.format(
+            gestorTCP.notificarUtilizador(estudante, String.format(
                 "📅  URGENTE: O livro \"%s\" deve ser devolvido HOJE! Prazo: %s.",
-                emp.getTituloLivro(), formatarData(emp.getPrazo())));
+                titulo, prazoFmt));
+
+            if (emailUser != null && gestorEmail.isConfigurado()) {
+                gestorEmail.enviarAsync(emailUser,
+                    "📅 Devolução hoje: \"" + titulo + "\"",
+                    gestorEmail.htmlPrazoHoje(estudante, titulo, prazoFmt));
+            }
 
         } else if (diasRestantes == 1) {
             // ── Lembrete 1 dia antes ─────────────────────────────────────
-            gestorTCP.notificarUtilizador(emp.getEstudante(), String.format(
+            gestorTCP.notificarUtilizador(estudante, String.format(
                 "⏰  Lembrete: O livro \"%s\" deve ser devolvido amanhã (%s).",
-                emp.getTituloLivro(), formatarData(emp.getPrazo())));
+                titulo, prazoFmt));
+
+            if (emailUser != null && gestorEmail.isConfigurado()) {
+                gestorEmail.enviarAsync(emailUser,
+                    "⏰ Lembrete: devolução amanhã — \"" + titulo + "\"",
+                    gestorEmail.htmlLembrete(estudante, titulo, prazoFmt));
+            }
         }
     }
 
@@ -114,8 +131,6 @@ public class MonitorPrazos {
         try {
             LocalDate d = LocalDate.parse(iso);
             return d.getDayOfMonth() + "/" + d.getMonthValue() + "/" + d.getYear();
-        } catch (Exception e) {
-            return iso;
-        }
+        } catch (Exception e) { return iso; }
     }
 }

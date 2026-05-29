@@ -31,6 +31,7 @@ public class Servidor {
     private final GestorTCP          gestorTCP;
     private final MonitorPrazos      monitorPrazos;
     private final GestorChat         gestorChat;
+    private final GestorEmail        gestorEmail;
     private final Gson               gson = new GsonBuilder().create();
     private final Map<String, String>    sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
@@ -40,12 +41,14 @@ public class Servidor {
         gestorLivros       = new GestorLivros(new BaseDados(), gestorHistorico, this);
         gestorUtilizadores = new GestorUtilizadores(new BaseDadosUtilizadores());
         logger             = new Logger();
+        gestorEmail        = new GestorEmail();
         gestorTCP          = new GestorTCP(gestorLivros, gestorUtilizadores, gestorHistorico, logger);
-        monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger);
+        monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger, gestorEmail, gestorUtilizadores);
         gestorChat         = new GestorChat();
         // Injectar dependências no gestor de livros
         gestorLivros.setGestorTCP(gestorTCP);
         gestorLivros.setGestorUtilizadores(gestorUtilizadores);
+        gestorLivros.setGestorEmail(gestorEmail);
     }
 
     public void iniciar() {
@@ -79,6 +82,10 @@ public class Servidor {
             sessoes.put(sid, nome);
             logger.registar("REGISTAR", nome, email);
             notificarTodos("utilizadores_update", "login", "");
+            // Email de boas-vindas
+            if (email != null && !email.isBlank())
+                gestorEmail.enviarAsync(email.trim().toLowerCase(),
+                    "📚 Bem-vindo(a) à Biblioteca Digital!", gestorEmail.htmlBemVindo(nome));
             ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
                             "isAdmin", nome.equalsIgnoreCase("admin")));
         });
@@ -322,6 +329,16 @@ public class Servidor {
             // Notificar o admin em tempo real via SSE
             SseClient adminSse = sseClientes.get("admin");
             if (adminSse != null) adminSse.sendEvent("recuperacao_update", email);
+            // Enviar token por email se SMTP configurado
+            if (email != null && gestorEmail.isConfigurado()) {
+                String token = gestorUtilizadores.getTokenRecuperacao(email);
+                String nomeUser = gestorUtilizadores.getNomePorEmail(email);
+                if (token != null && nomeUser != null) {
+                    gestorEmail.enviarAsync(email.trim().toLowerCase(),
+                        "🔑 Recuperação de password — Biblioteca Digital",
+                        gestorEmail.htmlRecuperacao(nomeUser, token));
+                }
+            }
             ctx.json(r);
         });
 
@@ -537,6 +554,68 @@ public class Servidor {
             ctx.contentType("text/csv; charset=utf-8");
             ctx.header("Content-Disposition", "attachment; filename=\"livros.csv\"");
             ctx.result(sb.toString());
+        });
+
+        // ── Configuração de Email ─────────────────────────────────────
+        app.get("/api/admin/email/config", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            GestorEmail.ConfigEmail cfg = gestorEmail.getConfig();
+            // Mascarar a password na resposta
+            Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put("smtp",          cfg.smtp);
+            r.put("porta",         cfg.porta);
+            r.put("utilizador",    cfg.utilizador);
+            r.put("passwordMask",  (cfg.password != null && !cfg.password.isBlank()) ? "********" : "");
+            r.put("nomeRemetente", cfg.nomeRemetente);
+            r.put("ssl",           cfg.ssl);
+            r.put("ativo",         cfg.ativo);
+            ctx.json(r);
+        });
+
+        app.post("/api/admin/email/config", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            GestorEmail.ConfigEmail cfg = new GestorEmail.ConfigEmail();
+            cfg.smtp          = str(b, "smtp");
+            cfg.utilizador    = str(b, "utilizador");
+            cfg.nomeRemetente = str(b, "nomeRemetente");
+            cfg.ativo         = Boolean.TRUE.equals(b.get("ativo"));
+            cfg.ssl           = Boolean.TRUE.equals(b.get("ssl"));
+            try { cfg.porta = Integer.parseInt(String.valueOf(b.getOrDefault("porta", 587))); }
+            catch (Exception e) { cfg.porta = 587; }
+            // Só actualizar a password se foi enviada uma não-vazia e não é a máscara
+            String pwd = str(b, "password");
+            if (!pwd.isBlank() && !pwd.equals("********")) {
+                cfg.password = pwd;
+            } else {
+                cfg.password = gestorEmail.getConfig().password; // manter a existente
+            }
+            gestorEmail.guardarConfig(cfg);
+            ctx.json(Map.of("ok", true, "mensagem", "Configuração guardada."));
+        });
+
+        app.post("/api/admin/email/testar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String para = str(b, "para");
+            if (para.isBlank()) {
+                // Se não especificado, enviar para o email do admin
+                para = gestorUtilizadores.getEmailPorNome("admin");
+            }
+            if (para == null || para.isBlank()) {
+                ctx.status(400).json(Map.of("erro", "Destinatário não especificado")); return;
+            }
+            String resultado = gestorEmail.testar(para);
+            if ("ok".equals(resultado)) {
+                ctx.json(Map.of("ok", true, "mensagem", "Email de teste enviado para " + para));
+            } else {
+                ctx.status(500).json(Map.of("erro", "Falha ao enviar: " + resultado));
+            }
         });
 
         // ── Chat em Tempo Real ─────────────────────────────────────────

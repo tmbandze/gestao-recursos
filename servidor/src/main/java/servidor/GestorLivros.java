@@ -33,6 +33,7 @@ public class GestorLivros {
     private final AnalisadorConteudo analisador = new AnalisadorConteudo();
     private GestorTCP               gestorTCP;          // injectado após construção
     private GestorUtilizadores      gestorUtilizadores; // injectado após construção
+    private GestorEmail             gestorEmail;        // injectado após construção
     private List<Livro> livros;
     private final Map<String, Queue<String>> filasEspera = new HashMap<>();
 
@@ -64,6 +65,9 @@ public class GestorLivros {
 
     /** Injecta o GestorUtilizadores após criação (necessário para multas). */
     public void setGestorUtilizadores(GestorUtilizadores gu) { this.gestorUtilizadores = gu; }
+
+    /** Injecta o GestorEmail após criação (para notificações de multa). */
+    public void setGestorEmail(GestorEmail ge) { this.gestorEmail = ge; }
 
     public synchronized List<Livro> listarTodos() {
         // Livros pendentes de aprovação não são visíveis no catálogo público
@@ -286,6 +290,16 @@ public class GestorLivros {
                         multaValor, diasAtraso, livro.getTitulo()));
                     servidor.notificarTodos("multa_update",
                         "nova_multa:" + nome + ":" + String.format("%.2f", multaValor), "");
+                    // Email de multa aplicada
+                    if (gestorEmail != null && gestorUtilizadores != null) {
+                        String emailUser = gestorUtilizadores.getEmailPorNome(nome);
+                        if (emailUser != null) {
+                            final long dA = diasAtraso; final double mV = multaValor;
+                            gestorEmail.enviarAsync(emailUser,
+                                String.format("💰 Multa de %.2f€ aplicada — \"%s\"", mV, livro.getTitulo()),
+                                gestorEmail.htmlMultaAplicada(nome, livro.getTitulo(), mV, dA));
+                        }
+                    }
                 }
             } catch (Exception ignored) {}
         }

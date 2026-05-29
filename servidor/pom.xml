@@ -50,6 +50,13 @@
             <artifactId>pdfbox</artifactId>
             <version>3.0.3</version>
         </dependency>
+
+        <!-- Envio de emails SMTP (Jakarta Mail / Angus Mail) -->
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>jakarta.mail</artifactId>
+            <version>2.0.3</version>
+        </dependency>
     </dependencies>
 
     <build>

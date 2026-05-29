@@ -260,6 +260,31 @@ public class GestorUtilizadores {
         return java.util.Collections.unmodifiableList(utilizadores);
     }
 
+    /** Devolve o email de um utilizador pelo nome (para envio de emails). */
+    public synchronized String getEmailPorNome(String nome) {
+        return utilizadores.stream()
+            .filter(u -> u.getNome().equals(nome))
+            .findFirst().map(Utilizador::getEmail).orElse(null);
+    }
+
+    /** Devolve o token de recuperação activo de um utilizador (para envio por email). */
+    public synchronized String getTokenRecuperacao(String email) {
+        if (email == null) return null;
+        String emailNorm = email.trim().toLowerCase();
+        return utilizadores.stream()
+            .filter(u -> u.getEmail().equalsIgnoreCase(emailNorm))
+            .findFirst().map(Utilizador::getTokenReset).orElse(null);
+    }
+
+    /** Devolve o nome de utilizador a partir do email (para emails de recuperação). */
+    public synchronized String getNomePorEmail(String email) {
+        if (email == null) return null;
+        String emailNorm = email.trim().toLowerCase();
+        return utilizadores.stream()
+            .filter(u -> u.getEmail().equalsIgnoreCase(emailNorm))
+            .findFirst().map(Utilizador::getNome).orElse(null);
+    }
+
     // Cria conta admin automática na primeira execução se não existir
     private void criarAdminSeNaoExistir() {
         boolean existe = utilizadores.stream().anyMatch(u -> u.getNome().equalsIgnoreCase("admin"));

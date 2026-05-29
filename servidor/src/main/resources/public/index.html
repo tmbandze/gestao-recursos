@@ -1381,6 +1381,46 @@ main {
 
       <div class="mdivider"></div>
 
+      <!-- Configuração de Email -->
+      <div style="margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy)">
+          📧 Notificações por Email
+        </span>
+        <span id="email-status-badge" style="font-size:.68rem;padding:2px 8px;border-radius:10px;background:var(--surface);color:var(--ink-m)">
+          a carregar…
+        </span>
+      </div>
+      <div id="email-config-form" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.75rem">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:.4rem">
+          <input id="email-smtp"  class="inp inp-sm" placeholder="Servidor SMTP  ex: smtp.gmail.com">
+          <input id="email-porta" class="inp inp-sm" placeholder="Porta" style="width:70px" type="number" value="587">
+        </div>
+        <input id="email-user"   class="inp inp-sm" placeholder="Utilizador / email SMTP">
+        <input id="email-pwd"    class="inp inp-sm" placeholder="Password (App Password se Gmail)" type="password">
+        <input id="email-nome"   class="inp inp-sm" placeholder="Nome do remetente  ex: Biblioteca Digital">
+        <div style="display:flex;gap:.75rem;align-items:center;font-size:.82rem;color:var(--ink-m)">
+          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer">
+            <input type="checkbox" id="email-ssl"> SSL (porta 465)
+          </label>
+          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer">
+            <input type="checkbox" id="email-ativo"> Activar envio de emails
+          </label>
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="emailGuardarConfig()">💾 Guardar</button>
+          <button class="btn btn-ghost btn-sm"   onclick="emailTestar()">📤 Enviar teste</button>
+        </div>
+        <div id="email-dicas" style="font-size:.75rem;color:var(--ink-d);line-height:1.5;display:none">
+          <strong>Gmail:</strong> SMTP <code>smtp.gmail.com</code>, Porta <code>587</code>, STARTTLS.<br>
+          Usa uma <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--navy)">App Password</a> (conta Google com 2FA activado).
+        </div>
+        <button class="btn btn-ghost btn-sm" style="width:fit-content;font-size:.72rem" onclick="emailToggleDicas()">
+          ℹ️ Ajuda — Gmail / SMTP
+        </button>
+      </div>
+
+      <div class="mdivider"></div>
+
       <!-- Recuperações de password pendentes -->
       <div style="margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--navy)">

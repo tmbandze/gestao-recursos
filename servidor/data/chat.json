@@ -1,0 +1,28 @@
+[
+  {
+    "id": "9fee71a3-de86-41e6-8633-fde16718c3ea",
+    "de": "TesteMulta",
+    "texto": "Ol� a todos! ??",
+    "data": "2026-05-29T17:50:39.408858800"
+  },
+  {
+    "id": "1b8bb646-6043-441c-b91c-ec4e9c264dd5",
+    "de": "TesteMulta",
+    "para": "admin",
+    "texto": "Ol� admin, tenho uma d�vida sobre a minha conta.",
+    "data": "2026-05-29T17:50:39.467869900"
+  },
+  {
+    "id": "f4f23706-f5aa-404f-be0b-492f995bc53c",
+    "de": "admin",
+    "para": "TesteMulta",
+    "texto": "Ol�! Como posso ajudar?",
+    "data": "2026-05-29T17:50:39.475243500"
+  },
+  {
+    "id": "13745a0b-be43-402d-9aaa-f0be158768b7",
+    "de": "TesteMulta",
+    "texto": "Ola a todos! Teste do chat :)",
+    "data": "2026-05-29T17:55:32.791295800"
+  }
+]

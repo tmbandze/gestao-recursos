@@ -1,15 +1,19 @@
 package servidor;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.sse.SseClient;
 import io.javalin.http.staticfiles.Location;
 import jakarta.servlet.MultipartConfigElement;
+import shared.MensagemChat;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,6 +27,8 @@ public class Servidor {
     private final Logger             logger;
     private final GestorTCP          gestorTCP;
     private final MonitorPrazos      monitorPrazos;
+    private final GestorChat         gestorChat;
+    private final Gson               gson = new GsonBuilder().create();
     private final Map<String, String>    sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
     private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
 
@@ -33,6 +39,7 @@ public class Servidor {
         logger             = new Logger();
         gestorTCP          = new GestorTCP(gestorLivros, gestorUtilizadores, gestorHistorico, logger);
         monitorPrazos      = new MonitorPrazos(gestorHistorico, gestorTCP, logger);
+        gestorChat         = new GestorChat();
         // Injectar dependências no gestor de livros
         gestorLivros.setGestorTCP(gestorTCP);
         gestorLivros.setGestorUtilizadores(gestorUtilizadores);
@@ -433,6 +440,48 @@ public class Servidor {
             ctx.json(r);
         });
 
+        // ── Chat em Tempo Real ─────────────────────────────────────────
+        app.get("/api/chat/mensagens", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            String para = ctx.queryParam("para");
+            List<MensagemChat> msgs;
+            if (para == null || para.isBlank()) {
+                msgs = gestorChat.listarGlobal(80);
+            } else {
+                msgs = gestorChat.listarPrivada(nome, para, 80);
+            }
+            ctx.json(msgs);
+        });
+
+        app.post("/api/chat/enviar", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = ctx.bodyAsClass(Map.class);
+            String para  = str(b, "para");
+            String texto = str(b, "texto");
+            if (texto.isBlank()) { ctx.status(400).json(Map.of("erro", "Mensagem vazia")); return; }
+            String paraFinal = para.isBlank() ? null : para;
+            MensagemChat msg = gestorChat.enviar(nome, paraFinal, texto);
+            if (msg == null) { ctx.status(400).json(Map.of("erro", "Erro ao enviar")); return; }
+            String payload = gson.toJson(msg);
+            if (paraFinal == null) {
+                // mensagem global → todos via SSE
+                notificarTodos("chat_mensagem", payload, "");
+            } else {
+                // mensagem privada → remetente e destinatário via SSE
+                notificarUsuarioEvento(nome,      "chat_priv", payload);
+                notificarUsuarioEvento(paraFinal, "chat_priv", payload);
+            }
+            ctx.json(Map.of("ok", true));
+        });
+
+        // Admin: lista utilizadores com conversas privadas
+        app.get("/api/chat/interlocutores", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
+            ctx.json(gestorChat.interlocutoresDoAdmin());
+        });
+
         app.start(PORTA);
         System.out.println("[INFO] Servidor web iniciado em http://0.0.0.0:" + PORTA);
         System.out.println("[INFO] Partilha com colegas: http://<SEU_IP>:" + PORTA);
@@ -457,6 +506,11 @@ public class Servidor {
     public void notificarUsuario(String nome, String mensagem) {
         SseClient client = sseClientes.get(nome);
         if (client != null) client.sendEvent("notificacao", mensagem);
+    }
+
+    public void notificarUsuarioEvento(String nome, String evento, String dados) {
+        SseClient client = sseClientes.get(nome);
+        if (client != null) client.sendEvent(evento, dados);
     }
 
     private static String str(Map<String, Object> m, String k) {

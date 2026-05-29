@@ -10,6 +10,12 @@ let pdfDoc    = null;
 let pdfPage   = 1;
 let _avaliando = {};   // livroId → número de estrelas seleccionadas
 
+// ── Estado do Chat ──────────────────────────────────────────────────────
+let chatAberto     = false;
+let chatSala       = 'global';  // 'global' | 'priv'
+let chatPrivAlvo   = null;      // nome do destinatário privado
+let chatNaoLidas   = { global: 0, priv: 0 };
+
 // PDF.js worker
 if (typeof pdfjsLib !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -75,6 +81,8 @@ async function logout() {
   sessionId = nomeUser = null; isAdmin = false;
   document.getElementById('main-view').classList.remove('active');
   document.getElementById('auth-view').style.display = 'flex';
+  document.getElementById('chat-panel').style.display = 'none';
+  chatAberto = false;
   switchTab('si');
 }
 
@@ -101,6 +109,7 @@ function mostrarMain() {
 
   carregarLivros();
   ligarSSE();
+  iniciarChat();
 }
 
 // ── API ─────────────────────────────────────────────────────────────────
@@ -180,6 +189,18 @@ function ligarSSE() {
     }
   });
   sse.addEventListener('notificacao', e => toast('🔔 ' + e.data, 'ok'));
+  sse.addEventListener('chat_mensagem', e => {
+    try {
+      const msg = JSON.parse(e.data);
+      chatReceberMensagem(msg, false);
+    } catch {}
+  });
+  sse.addEventListener('chat_priv', e => {
+    try {
+      const msg = JSON.parse(e.data);
+      chatReceberMensagem(msg, true);
+    } catch {}
+  });
   sse.onerror = () => {};
 }
 
@@ -1196,6 +1217,237 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') pdfNextPage();
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   pdfPrevPage();
 });
+
+// ── Chat em Tempo Real ──────────────────────────────────────────────────
+
+function iniciarChat() {
+  const panel = document.getElementById('chat-panel');
+  panel.style.display = 'flex';
+  // Admin: preparar tab privado com selector
+  if (isAdmin) chatCarregarInterlocutores();
+  else {
+    // Utilizador normal: privado é sempre com admin
+    chatPrivAlvo = 'admin';
+  }
+}
+
+function toggleChat() {
+  chatAberto = !chatAberto;
+  document.getElementById('chat-box').classList.toggle('oculto', !chatAberto);
+  if (chatAberto) {
+    chatNaoLidas[chatSala] = 0;
+    chatAtualizarBadge();
+    chatCarregarMensagens();
+    setTimeout(() => document.getElementById('chat-input').focus(), 100);
+  }
+}
+
+function switchChatTab(sala, btn) {
+  chatSala = sala;
+  document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  // Mostrar selector de utilizador só para admin no tab privado
+  const paraRow = document.getElementById('chat-para-row');
+  if (isAdmin && sala === 'priv') {
+    paraRow.style.display = 'flex';
+    chatPrivAlvo = document.getElementById('chat-para-select').value || null;
+  } else {
+    paraRow.style.display = 'none';
+    if (sala === 'priv') chatPrivAlvo = 'admin';
+  }
+  // limpar nao-lidas deste tab
+  chatNaoLidas[sala] = 0;
+  chatAtualizarBadge();
+  chatCarregarMensagens();
+}
+
+async function chatCarregarInterlocutores() {
+  if (!isAdmin) return;
+  const lista = await api('/api/chat/interlocutores');
+  const sel = document.getElementById('chat-para-select');
+  if (!Array.isArray(lista)) return;
+  // manter opção vazia + adicionar utilizadores
+  const existentes = Array.from(sel.options).map(o => o.value).filter(Boolean);
+  lista.forEach(nome => {
+    if (!existentes.includes(nome)) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = nome;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+function chatPrivMudou() {
+  chatPrivAlvo = document.getElementById('chat-para-select').value || null;
+  chatCarregarMensagens();
+}
+
+async function chatCarregarMensagens() {
+  const msgs = document.getElementById('chat-msgs');
+  msgs.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><span>A carregar…</span></div>';
+
+  let url = '/api/chat/mensagens';
+  if (chatSala === 'priv' && chatPrivAlvo) {
+    url += '?para=' + encodeURIComponent(chatPrivAlvo);
+  } else if (chatSala === 'priv' && isAdmin && !chatPrivAlvo) {
+    // nenhum utilizador seleccionado
+    msgs.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">🔒</div><span>Selecciona um utilizador para ver a conversa</span></div>';
+    return;
+  }
+
+  const r = await api(url);
+  if (!Array.isArray(r) || r.length === 0) {
+    msgs.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><span>Sem mensagens ainda.<br>Sê o primeiro a escrever!</span></div>';
+    return;
+  }
+  chatRenderMensagens(r);
+}
+
+function chatRenderMensagens(lista) {
+  const msgs = document.getElementById('chat-msgs');
+  msgs.innerHTML = '';
+  let ultimaData = null;
+
+  lista.forEach(msg => {
+    const dt = new Date(msg.data);
+    const dataStr = dt.toLocaleDateString('pt-PT', { day:'numeric', month:'long' });
+    if (dataStr !== ultimaData) {
+      ultimaData = dataStr;
+      const sep = document.createElement('div');
+      sep.className = 'chat-date-sep';
+      sep.textContent = dataStr;
+      msgs.appendChild(sep);
+    }
+    msgs.appendChild(chatCriarBolha(msg));
+  });
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function chatCriarBolha(msg) {
+  const mine = msg.de === nomeUser;
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-msg ' + (mine ? 'mine' : 'theirs');
+  wrap.dataset.id = msg.id;
+
+  const dt = new Date(msg.data);
+  const hora = dt.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+  if (!mine) {
+    const meta = document.createElement('div');
+    meta.className = 'chat-msg-meta';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'chat-msg-name' + (msg.de.toLowerCase() === 'admin' ? ' is-admin' : '');
+    nameSpan.textContent = msg.de;
+    meta.appendChild(nameSpan);
+    const timeSpan = document.createElement('span');
+    timeSpan.textContent = hora;
+    meta.appendChild(timeSpan);
+    wrap.appendChild(meta);
+  }
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.textContent = msg.texto;
+  wrap.appendChild(bubble);
+
+  if (mine) {
+    const meta = document.createElement('div');
+    meta.className = 'chat-msg-meta';
+    meta.textContent = hora;
+    wrap.appendChild(meta);
+  }
+  return wrap;
+}
+
+function chatReceberMensagem(msg, privada) {
+  const sala = privada ? 'priv' : 'global';
+  const tabActiva = chatAberto && chatSala === sala;
+
+  // Verificar se a mensagem é relevante para o tab privado actual
+  if (privada) {
+    const relevante = (msg.de === nomeUser && msg.para === chatPrivAlvo)
+                   || (msg.para === nomeUser && msg.de === chatPrivAlvo)
+                   || (isAdmin && (msg.de === chatPrivAlvo || msg.para === chatPrivAlvo));
+    if (tabActiva && relevante) {
+      const msgs = document.getElementById('chat-msgs');
+      // Remover placeholder vazio
+      const empty = msgs.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      msgs.appendChild(chatCriarBolha(msg));
+      msgs.scrollTop = msgs.scrollHeight;
+    } else {
+      chatNaoLidas.priv = (chatNaoLidas.priv || 0) + 1;
+      // Atualizar lista de interlocutores se admin
+      if (isAdmin) chatCarregarInterlocutores();
+    }
+  } else {
+    if (tabActiva) {
+      const msgs = document.getElementById('chat-msgs');
+      const empty = msgs.querySelector('.chat-empty');
+      if (empty) empty.remove();
+      msgs.appendChild(chatCriarBolha(msg));
+      msgs.scrollTop = msgs.scrollHeight;
+    } else {
+      chatNaoLidas.global = (chatNaoLidas.global || 0) + 1;
+    }
+  }
+
+  chatAtualizarBadge();
+  chatAtualizarDots();
+
+  // Notificação toast se o chat estiver fechado ou noutra sala
+  if (!tabActiva) {
+    const quem = msg.de === nomeUser ? 'Tu' : msg.de;
+    const preview = msg.texto.length > 50 ? msg.texto.slice(0, 50) + '…' : msg.texto;
+    if (!chatAberto) toast(`💬 ${quem}: ${preview}`, 'inf');
+  }
+}
+
+function chatAtualizarBadge() {
+  const total = (chatNaoLidas.global || 0) + (chatNaoLidas.priv || 0);
+  const badge = document.getElementById('chat-badge');
+  badge.style.display = total > 0 ? 'block' : 'none';
+  badge.textContent = total > 99 ? '99+' : total;
+}
+
+function chatAtualizarDots() {
+  const dotG = document.getElementById('chat-dot-global');
+  const dotP = document.getElementById('chat-dot-priv');
+  if (dotG) dotG.style.display = chatNaoLidas.global > 0 ? 'block' : 'none';
+  if (dotP) dotP.style.display = chatNaoLidas.priv  > 0 ? 'block' : 'none';
+}
+
+async function enviarChat() {
+  const input = document.getElementById('chat-input');
+  const texto = input.value.trim();
+  if (!texto) return;
+
+  if (chatSala === 'priv') {
+    if (!chatPrivAlvo) { toast('Selecciona um destinatário', 'err'); return; }
+    if (chatPrivAlvo.toLowerCase() === nomeUser.toLowerCase()) {
+      toast('Não podes enviar mensagem a ti próprio', 'err'); return;
+    }
+  }
+
+  const para = chatSala === 'priv' ? chatPrivAlvo : '';
+  input.value = '';
+  chatAutoResize(input);
+
+  const r = await api('/api/chat/enviar', 'POST', { para, texto });
+  if (r.erro) toast(r.erro, 'err');
+}
+
+function chatKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    enviarChat();
+  }
+}
+
+function chatAutoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
 
 // ── Restaurar sessão (isAdmin lido do localStorage, não derivado do nome) ──
 

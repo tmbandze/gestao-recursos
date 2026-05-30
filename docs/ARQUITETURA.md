@@ -52,15 +52,17 @@ Responsável por:
 - Instanciar todos os gestores e injectar dependências
 - Configurar o servidor Javalin (HTTP + SSE, porta 8080)
 - Registar todos os endpoints REST
-- Gerir o mapa de sessões (`sessionId → nomeUtilizador`)
+- Verificar JWT em cada pedido autenticado (`autenticar`, `autenticarDownload`)
+- Manter blacklist de `jti` para logout/refresh imediatos (`jwtBloqueados`)
 - Gerir o mapa de clientes SSE (`nome → SseClient`)
 - Emitir eventos SSE para um utilizador (`notificarUsuario`) ou todos (`notificarTodos`)
 - Detectar o IP de rede local no arranque
 
 ```java
-// Sessões em memória (sobrevivem a reconnects SSE)
-Map<String, String>    sessoes     = new ConcurrentHashMap<>();  // sid → nome
-Map<String, SseClient> sseClientes = new ConcurrentHashMap<>();  // nome → SSE
+// Autenticação JWT
+JwtUtil             jwtUtil       = new JwtUtil();
+Set<String>         jwtBloqueados = ConcurrentHashMap.newKeySet(); // jti invalidados
+Map<String, SseClient> sseClientes = new ConcurrentHashMap<>();    // nome → SSE
 ```
 
 ### 2.2 GestorLivros.java — Lógica de Livros
@@ -143,9 +145,10 @@ Canal legado para o cliente JavaFX. Gere uma thread por cliente, interpreta o pr
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| POST | `/api/registar` | Criar conta |
-| POST | `/api/login` | Iniciar sessão → devolve `sessionId` |
-| POST | `/api/logout` | Terminar sessão |
+| POST | `/api/registar` | Criar conta → devolve JWT |
+| POST | `/api/login` | Iniciar sessão → devolve JWT |
+| POST | `/api/logout` | Terminar sessão (invalida `jti` na blacklist) |
+| POST | `/api/auth/refresh` | Renovar JWT (invalida antigo, emite novo) |
 | POST | `/api/recuperar-password` | Pedir token de recuperação |
 | POST | `/api/reset-password` | Redefinir password com token |
 
@@ -191,9 +194,12 @@ Canal legado para o cliente JavaFX. Gere uma thread por cliente, interpreta o pr
 
 ### SSE
 
+A ligação SSE é autenticada via query param `?token=<jwt>` (o browser não pode enviar headers em `EventSource`).
+
 | Endpoint | Evento | Payload |
 |----------|--------|---------|
-| `GET /api/sse` | `atualizacao` | Tipo de operação |
+| `GET /api/eventos?token=` | `conectado` | Nome do utilizador |
+| | `atualizacao` | Tipo de operação |
 | | `utilizadores_update` | `login` ou `logout` |
 | | `notificacao` | Texto livre |
 | | `multa_update` | `nova_multa:nome:valor` |
@@ -258,18 +264,56 @@ Canal legado para o cliente JavaFX. Gere uma thread por cliente, interpreta o pr
 
 ---
 
-## 5. Autenticação e Sessões
+## 5. Autenticação JWT
 
-O servidor é **stateless por HTTP** mas mantém um `ConcurrentHashMap<String, String>` em memória que mapeia `sessionId → nomeUtilizador`. O token UUID é gerado no login/registo e enviado no header `X-Session-ID` em todos os pedidos autenticados.
+O sistema usa **JSON Web Tokens (JWT)** com algoritmo **HMAC-SHA256** para autenticar todos os pedidos. A implementação está em `JwtUtil.java`.
+
+### Fluxo
 
 ```
-POST /api/login  →  { "sessionId": "uuid", "nome": "João", "isAdmin": false }
+POST /api/login  →  { "token": "eyJhbGciOiJIUzI1NiJ9...", "nome": "João", "isAdmin": false }
 
-GET  /api/livros/{id}/requisitar
-     Headers: X-Session-ID: uuid
+POST /api/livros/{id}/requisitar
+     Headers: Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
 ```
 
-Para downloads CSV (browser não pode enviar headers custom), o `sid` é aceite também como query param: `?sid=uuid`.
+### Estrutura do JWT
+
+```json
+Header:  { "alg": "HS256" }
+Payload: {
+  "jti":   "uuid-único-por-token",   // usado para blacklist no logout
+  "sub":   "João",                   // nome do utilizador
+  "email": "joao@mail.com",
+  "admin": false,
+  "iat":   1748617200,               // emitido em (Unix timestamp)
+  "exp":   1748703600                // expira em 24 horas
+}
+```
+
+### Chave Secreta
+
+Gerada automaticamente na primeira execução com `Jwts.SIG.HS256.key().build()` e persistida em `data/jwt-secret.key` (Base64). Sobrevive a reinícios do servidor — todos os tokens emitidos anteriormente continuam válidos após reinício.
+
+### Blacklist de `jti`
+
+O `jti` (JWT ID) é um UUID único por token. O servidor mantém um `Set<String> jwtBloqueados` em memória. Em logout ou refresh, o `jti` do token actual é adicionado à blacklist — mesmo que o token ainda não tenha expirado, é imediatamente inválido.
+
+### Renovação Automática
+
+O cliente (`app.js`) usa `parseJwt()` para descodificar o payload e agenda um `setTimeout` para chamar `POST /api/auth/refresh` 30 minutos antes da expiração. O token antigo é invalidado e um novo emitido.
+
+### Downloads CSV
+
+O browser não pode enviar headers custom em downloads directos (`<a href>`). Para estes casos, o JWT é aceite como query param: `?token=<jwt>`.
+
+### `JwtUtil.java` — Métodos Principais
+
+```java
+String  gerarToken(String nome, String email, boolean isAdmin)  // JWT HMAC-SHA256, 24h
+Claims  verificar(String token)   // Claims ou null se inválido/expirado
+long    msAteExpirar(Claims c)    // milissegundos até expiração (para agendar refresh)
+```
 
 ---
 
@@ -319,6 +363,7 @@ Cada gestor tem a sua própria classe `BaseDados*` ou guarda directamente em JSO
 | `data/emprestimos.json` | `GestorHistorico` |
 | `data/chat.json` | `GestorChat` |
 | `data/email-config.json` | `GestorEmail` |
+| `data/jwt-secret.key` | `JwtUtil` (chave HMAC-SHA256 em Base64) |
 | `data/log.txt` | `Logger` |
 | `data/pdfs/{id}.pdf` | `GestorLivros` |
 | `data/capas/{id}.jpg` | `GestorLivros` (extracção assíncrona) |
@@ -336,6 +381,7 @@ Cada gestor tem a sua própria classe `BaseDados*` ou guarda directamente em JSO
 | SLF4J Simple | 2.0.13 | Logging interno do Jetty/Javalin |
 | Apache PDFBox | 3.0.3 | Extracção de capa (1ª página do PDF) |
 | Jakarta Mail (Angus) | 2.0.3 | Envio de emails via SMTP |
+| JJWT (io.jsonwebtoken) | 0.12.6 | Geração e verificação de JWT (HMAC-SHA256) |
 | Apache Maven | 3.8+ | Build + gestão de dependências |
 
 O servidor é empacotado como um **fat JAR** via `maven-shade-plugin`, incluindo todas as dependências.

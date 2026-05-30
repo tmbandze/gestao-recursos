@@ -2,7 +2,7 @@
 
 **Projecto:** Partilha de Livros entre Estudantes — Biblioteca Digital  
 **Disciplina:** Sistemas Distribuídos  
-**Stack:** Java 17 · Javalin 6 · Gson · PDFBox · Jakarta Mail · Maven  
+**Stack:** Java 17 · Javalin 6 · Gson · PDFBox · Jakarta Mail · JJWT · Maven  
 **Versão:** 2.0 | Maio 2026
 
 ---
@@ -116,7 +116,7 @@ gestao-recursos/
 | Concorrência | `synchronized`, `ConcurrentHashMap`, thread pools |
 | Propagação de eventos | Broadcast SSE; GestorTCP `notificarTodos` |
 | Comunicação baseada em eventos | `MonitorPrazos` com `ScheduledExecutorService` |
-| Sessões sem estado | Tokens UUID em `ConcurrentHashMap` |
+| Autenticação segura | JWT HMAC-SHA256; blacklist de `jti`; renovação automática (24h) |
 | Transparência de localização | IP auto-detectado; cliente acede por IP:porta |
 | Persistência de estado | JSON files; estado sobrevive a reinícios |
 | Middleware | Protocolo de texto TCP; API REST HTTP |

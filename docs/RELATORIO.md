@@ -4,7 +4,7 @@
 **Disciplina:** Sistemas Distribuídos  
 **Ano lectivo:** 2025/2026  
 **Trabalho:** Prático A — Gestão de Recursos  
-**Stack:** Java 17 · Javalin 6 · Gson · PDFBox · Jakarta Mail · Maven  
+**Stack:** Java 17 · Javalin 6 · Gson · PDFBox · Jakarta Mail · JJWT · Maven  
 **Repositório:** https://github.com/tmbandze/gestao-recursos
 
 ---
@@ -50,7 +50,8 @@ Cliente JavaFX       ──── TCP 9090 ─────────► ├─
 
 | Classe | Responsabilidade |
 |--------|-----------------|
-| `Servidor.java` | Javalin HTTP (8080); sessões; endpoints REST; SSE broadcast |
+| `Servidor.java` | Javalin HTTP (8080); auth JWT; endpoints REST; SSE broadcast |
+| `JwtUtil.java` | Geração/verificação JWT HMAC-SHA256; chave persistida em `jwt-secret.key` |
 | `GestorLivros.java` | CRUD; exemplares múltiplos; requisição/devolução; filas de espera; multas; PDF; avaliações |
 | `GestorUtilizadores.java` | Registo/login (SHA-256+salt); bloqueio; multas; recuperação de password |
 | `GestorHistorico.java` | Registo de empréstimos; histórico pessoal; empréstimos activos |
@@ -81,19 +82,25 @@ Cliente JavaFX       ──── TCP 9090 ─────────► ├─
 
 ### 3.1 HTTP REST + SSE (canal principal)
 
-A comunicação primária usa HTTP/1.1 com JSON. Autenticação via header `X-Session-ID` (token UUID gerado no login). O servidor não mantém estado de sessão por HTTP — o mapeamento `sessionId → nome` é guardado num `ConcurrentHashMap` em memória.
+A comunicação primária usa HTTP/1.1 com JSON. Autenticação via **JWT (JSON Web Token)** com algoritmo **HMAC-SHA256**: o token é emitido no login/registo e enviado em todos os pedidos autenticados no header `Authorization: Bearer <token>`.
 
 ```
 POST /api/login
 Body: {"email": "joao@mail.com", "password": "secret"}
-Response: {"sessionId": "uuid", "nome": "João", "isAdmin": false}
+Response: {
+  "token":   "eyJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJ...",
+  "nome":    "João",
+  "isAdmin": false
+}
 
 POST /api/livros/{id}/requisitar
-Headers: X-Session-ID: uuid
+Headers: Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
 Response: {"ok": true, "mensagem": "Livro requisitado! Prazo: 05/06/2026"}
 ```
 
-**SSE:** O browser estabelece uma ligação permanente ao endpoint `/api/sse`. O servidor envia eventos quando ocorrem mudanças:
+O JWT contém os claims `jti` (UUID único), `sub` (nome), `email`, `admin`, `iat` e `exp` (validade 24h). A chave HMAC-SHA256 é gerada na primeira execução e persistida em `data/jwt-secret.key`. O logout invalida imediatamente o token via blacklist de `jti`.
+
+**SSE:** O browser estabelece uma ligação permanente ao endpoint `/api/eventos`. Como o `EventSource` do browser não suporta headers custom, o JWT é passado como query param: `/api/eventos?token=<jwt>`. O servidor envia eventos quando ocorrem mudanças:
 
 | Evento SSE | Quando é emitido |
 |-----------|------------------|
@@ -220,9 +227,24 @@ A cada hora verifica os empréstimos activos e emite eventos SSE + emails confor
 
 O sistema garante que o estado sobrevive a reinícios do servidor: todos os dados são imediatamente guardados em ficheiros JSON após cada modificação. Não existe cache em memória — a fonte de verdade é sempre o ficheiro.
 
-### 4.10 Sessões sem Estado HTTP (Stateless Sessions)
+### 4.10 Autenticação JWT — Segurança em Sistemas Distribuídos
 
-O protocolo HTTP é stateless por natureza. O sistema implementa sessões com tokens UUID: cada login gera um novo UUID guardado no `ConcurrentHashMap` do servidor. O cliente envia o token no header `X-Session-ID` em cada pedido. Esta é a base dos sistemas de autenticação modernos.
+O sistema implementa autenticação stateless com **JSON Web Tokens (JWT)** assinados com HMAC-SHA256 (`JwtUtil.java`). Esta abordagem é especialmente adequada para sistemas distribuídos por duas razões: (1) o servidor não precisa de guardar estado de sessão — basta verificar a assinatura do token; (2) o token pode ser validado por qualquer réplica do servidor sem acesso a base de dados central.
+
+```java
+// Emissão no login
+String token = jwtUtil.gerarToken(nome, email, isAdmin);
+// Claims: jti (UUID), sub (nome), email, admin, iat, exp (+24h)
+
+// Verificação em cada pedido autenticado
+Claims c = jwtUtil.verificar(token);  // null se inválido/expirado
+if (c == null || jwtBloqueados.contains(c.getId()))
+    return 401; // Não autenticado
+```
+
+**Blacklist de `jti`:** Para logout imediato (sem esperar expiração), o `jti` do token é adicionado a um `Set<String> jwtBloqueados`. Esta blacklist existe apenas em memória — ao reiniciar, os tokens expiram naturalmente em 24h.
+
+**Renovação automática:** O cliente JavaScript usa `parseJwt()` para descodificar o payload e agenda um `setTimeout` para chamar `POST /api/auth/refresh` 30 minutos antes da expiração. O token antigo é invalidado e um novo emitido — a sessão nunca expira durante uso activo.
 
 ---
 
@@ -242,7 +264,7 @@ O protocolo HTTP é stateless por natureza. O sistema implementa sessões com to
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| **Autenticação** | Registo/login por email+password; hash SHA-256 com salt de 16 bytes |
+| **Autenticação** | Registo/login por email+password; hash SHA-256 com salt de 16 bytes; JWT HMAC-SHA256 com validade de 24h |
 | **Recuperação de password** | Token de 8 chars alfanuméricos, TTL 2h; entregue por email ou consola |
 | **Múltiplos exemplares** | Um livro pode ter N cópias físicas; controlo independente por exemplar |
 | **Prazo de devolução** | 7 dias; prazo individual por estudante/cópia |
@@ -289,9 +311,15 @@ O servidor é empacotado como um JAR único com todas as dependências. Isto sim
 
 As passwords nunca são guardadas em texto claro. Cada utilizador tem um `salt` de 16 bytes aleatórios; a password é guardada como `SHA-256(salt + password)`. Isto evita ataques de dicionário e rainbow tables.
 
-### 6.6 Sessões em Memória
+### 6.6 JWT vs. Sessões em Memória
 
-As sessões (`sessionId → nome`) estão num `ConcurrentHashMap` em memória. Se o servidor reiniciar, as sessões são perdidas e os utilizadores precisam de fazer login novamente — comportamento esperado e correcto. Os dados de utilizadores e livros são persistidos em JSON e sobrevivem ao reinício.
+A migração de tokens UUID (sessões em memória) para JWT elimina o mapeamento `sessionId → nome` do servidor. Com JWT, o servidor verifica apenas a assinatura — sem consultar nenhum mapa em memória. As vantagens:
+
+- **Stateless verdadeiro**: o servidor não precisa de manter estado de sessão
+- **Escalabilidade**: qualquer réplica valida o mesmo token (mesma chave)
+- **Informação self-contained**: nome, email e `isAdmin` viajam no próprio token
+
+A única excepção é a blacklist de `jti` para logout imediato — pequena estrutura em memória que cresce com um UUID por sessão activa. Ao reiniciar o servidor, a blacklist é limpa; os tokens que ainda não expiraram (max. 24h) seriam tecnicamente válidos, mas o utilizador recebe um erro 401 ao reconectar o SSE (conexão fechada pelo servidor ao reiniciar) e faz login novamente.
 
 ---
 
@@ -417,9 +445,9 @@ gestao-recursos/
 
 | Limitação | Justificação / Mitigação |
 |-----------|--------------------------|
-| Sessões em memória | Reinício do servidor invalida sessões ativas — comportamento esperado |
+| Blacklist JWT em memória | Reinício limpa blacklist; tokens emitidos antes ficam válidos até expirar (24h) — risco mínimo em âmbito académico |
 | Servidor como ponto único de falha | Âmbito académico; replicação exigiria consenso distribuído (Raft/Paxos) |
-| Sem TLS/HTTPS | Rede local académica; pode ser adicionado via proxy reverso (Nginx) |
+| Sem TLS/HTTPS | Rede local académica; JWT viaja em texto claro — adicionar HTTPS via Nginx em produção |
 | Persistência em JSON | Adequada para o volume académico; em produção usar PostgreSQL/MongoDB |
 | Análise de conteúdo simplificada | `AnalisadorConteudo` usa heurísticas; não substitui antivírus real |
 | Filas de espera em memória (índice) | O estado das filas é reconstruído ao carregar `livros.json` |
@@ -435,7 +463,7 @@ O sistema implementado supera os requisitos mínimos do enunciado e demonstra, d
 - **Comunicação assíncrona**: SSE push para notificações em tempo real
 - **Concorrência**: `synchronized`, `ConcurrentHashMap`, `ExecutorService`, `ScheduledExecutorService`
 - **Propagação de eventos**: broadcast SSE a todos os clientes ligados
-- **Sessões**: tokens UUID com `ConcurrentHashMap`
+- **Autenticação JWT**: tokens HMAC-SHA256 stateless com blacklist de `jti` e renovação automática
 - **Transparência de localização**: acesso por IP:porta com auto-detecção
 - **Persistência**: estado distribuído em ficheiros JSON (sobrevive a reinícios)
 - **Comunicação baseada em eventos**: `MonitorPrazos` como publisher agendado
@@ -455,6 +483,7 @@ A evolução arquitectónica do sistema — de TCP/JavaFX para HTTP/SSE/Browser 
 | SLF4J Simple | 2.0.13 | Logging interno Jetty/Javalin |
 | Apache PDFBox | 3.0.3 | Extracção de capa (1ª página PDF → JPEG) |
 | Jakarta Mail (Angus) | 2.0.3 | Envio de emails via SMTP |
+| JJWT (io.jsonwebtoken) | 0.12.6 | Geração e verificação JWT HMAC-SHA256 |
 | Apache Maven | 3.8+ | Build + dependências + fat JAR |
 
 ## Anexo B — Endpoints Completos
@@ -471,39 +500,41 @@ A evolução arquitectónica do sistema — de TCP/JavaFX para HTTP/SSE/Browser 
 - `GET /api/livros/{id}` — Detalhes
 - `GET /api/livros/{id}/capa` — Capa JPEG
 
-### Autenticados (header `X-Session-ID`)
-- `POST /api/logout`
-- `GET /api/sse` — Conexão SSE
+### Autenticados (header `Authorization: Bearer <jwt>`)
+- `POST /api/logout` — invalida o `jti` do token na blacklist
+- `POST /api/auth/refresh` — renova o JWT (invalida o antigo, emite novo)
+- `GET /api/eventos?token=<jwt>` — Conexão SSE (token via query param)
 - `POST /api/livros` — Adicionar livro
 - `POST /api/livros/{id}/requisitar`
 - `POST /api/livros/{id}/devolver`
 - `POST /api/livros/{id}/avaliar`
-- `DELETE /api/livros/{id}/avaliacao`
-- `GET /api/livros/{id}/pdf`
-- `GET /api/historico`
+- `DELETE /api/livros/{id}/avaliacoes/{utilizador}`
+- `GET /api/livros/{id}/ler` — PDF inline
+- `GET /api/historico/pessoal`
 - `GET /api/multas`
 - `GET /api/relatorio`
 - `GET /api/chat/mensagens?para=`
 - `POST /api/chat/enviar`
 - `GET /api/recomendacoes?max=`
 
-### Admin (header `X-Session-ID`, nome = "admin")
+### Admin (header `Authorization: Bearer <jwt>`, claim `admin: true`)
 - `GET /api/admin/utilizadores`
-- `POST /api/admin/bloquear`
-- `POST /api/admin/desbloquear`
-- `POST /api/admin/avisar`
-- `POST /api/admin/perdoar-multa`
+- `POST /api/admin/bloquear/{nome}`
+- `POST /api/admin/desbloquear/{nome}`
+- `POST /api/admin/avisar/{nome}`
+- `POST /api/admin/multas/{utilizador}/perdoar`
 - `GET /api/admin/multas`
-- `GET /api/admin/log`
+- `GET /api/historico` — log de operações
 - `GET /api/admin/pendentes`
-- `POST /api/admin/aprovar/{id}`
-- `POST /api/admin/rejeitar/{id}`
-- `POST /api/admin/exemplar/{idPendente}/{idExistente}`
+- `POST /api/admin/livros/{id}/aprovar`
+- `POST /api/admin/livros/{id}/rejeitar`
+- `POST /api/admin/livros/{idPendente}/aprovar-como-exemplar/{idExistente}`
 - `GET /api/admin/suspeitos`
 - `GET /api/admin/recuperacoes`
-- `GET /api/admin/relatorio/{tipo}.csv?sid=`
+- `GET /api/admin/relatorio/{tipo}.csv?token=<jwt>` — download directo
 - `GET /api/chat/interlocutores`
 - `GET /api/admin/email/config`
 - `POST /api/admin/email/config`
 - `POST /api/admin/email/testar`
 - `DELETE /api/livros/{id}`
+- `GET /api/admin/sistema`

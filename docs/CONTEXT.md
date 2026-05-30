@@ -25,7 +25,9 @@ O grupo optou pelo Trabalho A (livros) em vez do B (chat) com o objectivo de se 
 
 Registo e login por email + password. As passwords são guardadas como `SHA-256(salt + password)` com salt de 16 bytes aleatórios — nunca em texto claro. Recuperação por token de 8 caracteres alfanuméricos (TTL 2 horas), entregue por email se SMTP configurado.
 
-**Conceito de SD:** Sessões sem estado (tokens UUID), segurança em sistemas distribuídos.
+A autenticação usa **JWT (JSON Web Tokens)** com assinatura HMAC-SHA256 (`JwtUtil.java`). Cada token tem validade de 24 horas e contém os claims `jti`, `sub` (nome), `email`, `admin`, `iat` e `exp`. O logout invalida o token imediatamente via blacklist de `jti`. O cliente renova automaticamente o token 30 minutos antes da expiração via `POST /api/auth/refresh`.
+
+**Conceito de SD:** Autenticação stateless em sistemas distribuídos; segurança com tokens assinados; renovação automática de credenciais.
 
 ### 3.2 Múltiplos Clientes Simultâneos
 

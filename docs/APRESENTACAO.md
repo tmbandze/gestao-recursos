@@ -98,7 +98,7 @@ Para cada conceito, dizer a frase e mostrar o ponto relevante no código ou na d
 | "O cliente não sabe onde os dados estão" | Transparência de localização | URL no browser — só vê IP:porta |
 | "O servidor notifica sem o cliente perguntar" | Comunicação assíncrona | `notificarUsuario()` no `Servidor.java` |
 | "O monitor de prazos corre de hora em hora automaticamente" | Comunicação baseada em eventos | `MonitorPrazos.java` — `scheduleAtFixedRate` |
-| "A sessão é um token UUID — o HTTP é stateless" | Sessões sem estado | Header `X-Session-ID` em qualquer pedido |
+| "A sessão é um JWT assinado — o servidor não guarda estado" | Autenticação stateless | `JwtUtil.java` — `gerarToken`, `verificar`; header `Authorization: Bearer` |
 | "Os dados sobrevivem a um reinício do servidor" | Persistência | `data/livros.json` aberto no editor |
 
 ---

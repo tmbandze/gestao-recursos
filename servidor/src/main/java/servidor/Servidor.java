@@ -9,6 +9,8 @@ import io.javalin.http.staticfiles.Location;
 import jakarta.servlet.MultipartConfigElement;
 import shared.MensagemChat;
 
+import io.jsonwebtoken.Claims;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -18,7 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Servidor {
@@ -33,9 +35,10 @@ public class Servidor {
     private final GestorChat             gestorChat;
     private final GestorEmail            gestorEmail;
     private final GestorRecomendacoes    gestorRec;
+    private final JwtUtil                jwtUtil     = new JwtUtil();
     private final Gson                   gson = new GsonBuilder().create();
-    private final Map<String, String>    sessoes     = new ConcurrentHashMap<>(); // sessionId → nome
-    private final Map<String, SseClient> sseClientes = new ConcurrentHashMap<>(); // nome → SseClient
+    private final Set<String>            jwtBloqueados = ConcurrentHashMap.newKeySet(); // jti de tokens invalidados
+    private final Map<String, SseClient> sseClientes   = new ConcurrentHashMap<>();     // nome → SseClient
 
     public Servidor() {
         gestorHistorico    = new GestorHistorico();
@@ -79,17 +82,18 @@ public class Servidor {
             var r = gestorUtilizadores.registar(nomeInput, email, password);
             if (r.containsKey("erro")) { ctx.status(400).json(r); return; }
 
-            String sid  = UUID.randomUUID().toString();
-            String nome = (String) r.get("nome");
-            sessoes.put(sid, nome);
+            String nome    = (String) r.get("nome");
+            String emailOk = (String) r.get("email");
+            boolean admin  = nome.equalsIgnoreCase("admin");
+            String token   = jwtUtil.gerarToken(nome, emailOk != null ? emailOk : "", admin);
             logger.registar("REGISTAR", nome, email);
             notificarTodos("utilizadores_update", "login", "");
             // Email de boas-vindas
             if (email != null && !email.isBlank())
                 gestorEmail.enviarAsync(email.trim().toLowerCase(),
                     "📚 Bem-vindo(a) à Biblioteca Digital!", gestorEmail.htmlBemVindo(nome));
-            ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
-                            "isAdmin", nome.equalsIgnoreCase("admin")));
+            ctx.json(Map.of("token", token, "nome", nome, "email", emailOk != null ? emailOk : "",
+                            "isAdmin", admin));
         });
 
         app.post("/api/login", ctx -> {
@@ -101,23 +105,39 @@ public class Servidor {
             var r = gestorUtilizadores.login(email, password);
             if (r.containsKey("erro")) { ctx.status(401).json(r); return; }
 
-            String sid  = UUID.randomUUID().toString();
-            String nome = (String) r.get("nome");
-            sessoes.put(sid, nome);
+            String nome    = (String) r.get("nome");
+            String emailOk = (String) r.get("email");
+            boolean admin  = nome.equalsIgnoreCase("admin");
+            String token   = jwtUtil.gerarToken(nome, emailOk != null ? emailOk : "", admin);
             logger.registar("LOGIN", nome, email);
             notificarTodos("utilizadores_update", "login", "");
-            ctx.json(Map.of("sessionId", sid, "nome", nome, "email", r.get("email"),
-                            "isAdmin", nome.equalsIgnoreCase("admin")));
+            ctx.json(Map.of("token", token, "nome", nome, "email", emailOk != null ? emailOk : "",
+                            "isAdmin", admin));
         });
 
         app.post("/api/logout", ctx -> {
-            String nome = sessoes.remove(ctx.header("X-Session-ID"));
-            if (nome != null) {
-                sseClientes.remove(nome);
-                logger.registar("LOGOUT", nome, "-");
+            Claims c = extrairClaims(ctx);
+            if (c != null) {
+                String jti  = c.getId();
+                String nome = c.getSubject();
+                if (jti  != null) jwtBloqueados.add(jti);
+                if (nome != null) sseClientes.remove(nome);
+                logger.registar("LOGOUT", nome != null ? nome : "?", "-");
                 notificarTodos("utilizadores_update", "logout", "");
             }
             ctx.json(Map.of("ok", true));
+        });
+
+        // Renovação de token (chamado pelo cliente 30 min antes da expiração)
+        app.post("/api/auth/refresh", ctx -> {
+            String nome = autenticar(ctx); if (nome == null) return;
+            Claims c = extrairClaims(ctx);
+            // Invalidar token antigo
+            if (c != null && c.getId() != null) jwtBloqueados.add(c.getId());
+            String email   = c != null ? (String) c.get("email") : "";
+            boolean admin  = c != null && Boolean.TRUE.equals(c.get("admin"));
+            String novoTok = jwtUtil.gerarToken(nome, email != null ? email : "", admin);
+            ctx.json(Map.of("token", novoTok));
         });
 
         // ── Livros ────────────────────────────────────────────────────
@@ -296,18 +316,19 @@ public class Servidor {
             ctx.json(Map.of("activos", activos, "devolvidos", devolvidos));
         });
 
+        // Utilizadores com SSE activo = "online" via web
         app.get("/api/usuarios", ctx ->
-            ctx.json(Map.of("usuarios", new ArrayList<>(sessoes.values()))));
+            ctx.json(Map.of("usuarios", new ArrayList<>(sseClientes.keySet()))));
 
         app.get("/api/admin/utilizadores", ctx -> {
             String nome = autenticar(ctx); if (nome == null) return;
             if (!nome.equalsIgnoreCase("admin")) { ctx.status(403).json(Map.of("erro","Acesso negado")); return; }
-            var conectadosHTTP = new java.util.HashSet<>(sessoes.values());
+            var conectadosSSE = sseClientes.keySet();
             var lista = gestorUtilizadores.listarNomes().stream().map(n -> {
                 var m = new java.util.LinkedHashMap<String, Object>();
                 m.put("nome", n);
-                // Online = sessão HTTP (web) OU ligação TCP activa (cliente JavaFX)
-                m.put("conectado", conectadosHTTP.contains(n) || gestorTCP.isConectado(n));
+                // Online = ligação SSE activa (web) OU ligação TCP activa (cliente JavaFX)
+                m.put("conectado", conectadosSSE.contains(n) || gestorTCP.isConectado(n));
                 return m;
             }).collect(java.util.stream.Collectors.toList());
             ctx.json(Map.of("utilizadores", lista));
@@ -321,12 +342,18 @@ public class Servidor {
 
         // ── SSE ───────────────────────────────────────────────────────
         app.sse("/api/eventos", client -> {
-            String sid  = client.ctx().queryParam("sid");
-            String nome = sessoes.get(sid);
-            if (nome == null) { client.close(); return; }
+            String token  = client.ctx().queryParam("token");
+            Claims claims = jwtUtil.verificar(token);
+            if (claims == null || jwtBloqueados.contains(claims.getId())) {
+                client.close(); return;
+            }
+            String nome = claims.getSubject();
             sseClientes.put(nome, client);
             client.sendEvent("conectado", nome);
-            client.onClose(() -> sseClientes.remove(nome));
+            client.onClose(() -> {
+                sseClientes.remove(nome);
+                notificarTodos("utilizadores_update", "logout", nome);
+            });
         });
 
         // ── Recuperação de password (HTTP) ────────────────────────────
@@ -685,10 +712,24 @@ public class Servidor {
         monitorPrazos.iniciar();
     }
 
+    /** Extrai e valida os Claims do Bearer token no header Authorization. */
+    private Claims extrairClaims(Context ctx) {
+        String header = ctx.header("Authorization");
+        String token  = null;
+        if (header != null && header.startsWith("Bearer ")) {
+            token = header.substring(7).trim();
+        }
+        // Fallback: header X-Session-ID (compatibilidade)
+        if (token == null || token.isBlank()) token = ctx.header("X-Session-ID");
+        Claims c = jwtUtil.verificar(token);
+        if (c != null && jwtBloqueados.contains(c.getId())) return null;
+        return c;
+    }
+
     private String autenticar(Context ctx) {
-        String nome = sessoes.get(ctx.header("X-Session-ID"));
-        if (nome == null) ctx.status(401).json(Map.of("erro", "Não autenticado"));
-        return nome;
+        Claims c = extrairClaims(ctx);
+        if (c == null) { ctx.status(401).json(Map.of("erro", "Não autenticado")); return null; }
+        return c.getSubject();
     }
 
     public void notificarTodos(String evento, String dados, String excepto) {
@@ -707,13 +748,19 @@ public class Servidor {
         if (client != null) client.sendEvent(evento, dados);
     }
 
-    /** Autenticação via header OU query param ?sid= (necessário para downloads directos). */
+    /** Autenticação para downloads directos: aceita ?token= OU ?sid= (legado) como query param. */
     private String autenticarDownload(Context ctx) {
-        String sid = ctx.header("X-Session-ID");
-        if (sid == null || sid.isBlank()) sid = ctx.queryParam("sid");
-        String nome = sid != null ? sessoes.get(sid) : null;
-        if (nome == null) { ctx.status(401).result("Não autenticado"); return null; }
-        return nome;
+        // Tentar primeiro via header normal
+        Claims c = extrairClaims(ctx);
+        if (c == null) {
+            // Fallback para query param (browser não pode enviar headers em downloads directos)
+            String qp = ctx.queryParam("token");
+            if (qp == null || qp.isBlank()) qp = ctx.queryParam("sid"); // legado
+            c = jwtUtil.verificar(qp);
+            if (c != null && jwtBloqueados.contains(c.getId())) c = null;
+        }
+        if (c == null) { ctx.status(401).result("Não autenticado"); return null; }
+        return c.getSubject();
     }
 
     /** Escapa um valor para CSV: envolve em aspas se contiver vírgula, aspas ou newline. */

@@ -1,7 +1,8 @@
 // ── Estado ─────────────────────────────────────────────────────────────
-let sessionId = localStorage.getItem('sid');
+let sessionId = localStorage.getItem('token'); // JWT Bearer token
 let nomeUser  = localStorage.getItem('nome');
 let isAdmin   = localStorage.getItem('isAdmin') === 'true'; // vem do servidor, nunca derivado do nome
+let _refreshTimer = null; // timer para renovação automática do JWT
 let livros    = [];
 let filtro    = 'todos';
 let pesquisa  = '';
@@ -63,20 +64,52 @@ async function signUp() {
 }
 
 function iniciarSessao(r) {
-  sessionId = r.sessionId;
+  sessionId = r.token || r.sessionId; // suporta resposta JWT (token) e legado (sessionId)
   nomeUser  = r.nome;
   isAdmin   = r.isAdmin === true; // flag vinda do servidor — nunca comparar nome no cliente
 
-  localStorage.setItem('sid',     sessionId);
+  localStorage.setItem('token',   sessionId);
   localStorage.setItem('nome',    nomeUser);
   localStorage.setItem('isAdmin', String(isAdmin));
 
+  agendarRefresh(); // agenda renovação automática do JWT
   mostrarMain();
+}
+
+/** Descodifica o payload de um JWT sem verificar assinatura (apenas cliente). */
+function parseJwt(token) {
+  try {
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch { return null; }
+}
+
+/** Agenda a renovação do token ~30 min antes de expirar. */
+function agendarRefresh() {
+  if (_refreshTimer) clearTimeout(_refreshTimer);
+  if (!sessionId) return;
+  const claims = parseJwt(sessionId);
+  if (!claims || !claims.exp) return;
+  const msAteExp = claims.exp * 1000 - Date.now();
+  const msAntes  = 30 * 60 * 1000; // 30 minutos antes
+  const delay    = Math.max(msAteExp - msAntes, 60_000); // mínimo 1 min
+  _refreshTimer = setTimeout(refreshToken, delay);
+}
+
+/** Renova o JWT chamando POST /api/auth/refresh. */
+async function refreshToken() {
+  const r = await api('/api/auth/refresh', 'POST');
+  if (r.token) {
+    sessionId = r.token;
+    localStorage.setItem('token', sessionId);
+    agendarRefresh();
+  }
 }
 
 async function logout() {
   await api('/api/logout', 'POST');
-  ['sid','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
+  ['token','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
+  if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
   if (sse) { sse.close(); sse = null; }
   sessionId = nomeUser = null; isAdmin = false;
   document.getElementById('main-view').classList.remove('active');
@@ -118,17 +151,18 @@ function mostrarMain() {
 
 async function api(path, method = 'GET', body = null) {
   const h = { 'Content-Type': 'application/json' };
-  if (sessionId) h['X-Session-ID'] = sessionId;
+  if (sessionId) h['Authorization'] = 'Bearer ' + sessionId;
   try {
     const res = await fetch(path, {
       method,
       headers: h,
       body: body ? JSON.stringify(body) : null
     });
-    // Sessão expirou (servidor reiniciado ou timeout) → volta ao login
+    // Token expirado ou inválido → volta ao login
     if (res.status === 401) {
-      ['sid','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
+      ['token','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
       sessionId = nomeUser = null; isAdmin = false;
+      if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
       if (sse) { sse.close(); sse = null; }
       document.getElementById('main-view').classList.remove('active');
       document.getElementById('auth-view').style.display = 'flex';
@@ -145,7 +179,7 @@ async function api(path, method = 'GET', body = null) {
 /** Fetch com autenticação que lança excepção em caso de erro HTTP. */
 async function apiFetch(path, opts = {}) {
   const h = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  if (sessionId) h['X-Session-ID'] = sessionId;
+  if (sessionId) h['Authorization'] = 'Bearer ' + sessionId;
   const res = await fetch(path, { ...opts, headers: h });
   const data = await res.json().catch(() => ({ erro: res.statusText }));
   if (!res.ok) throw new Error(data.erro || data.mensagem || res.statusText);
@@ -154,7 +188,7 @@ async function apiFetch(path, opts = {}) {
 
 async function apiForm(path, formData) {
   const h = {};
-  if (sessionId) h['X-Session-ID'] = sessionId;
+  if (sessionId) h['Authorization'] = 'Bearer ' + sessionId;
   try {
     const res = await fetch(path, { method: 'POST', headers: h, body: formData });
     return await res.json();
@@ -167,7 +201,7 @@ async function apiForm(path, formData) {
 
 function ligarSSE() {
   if (sse) sse.close();
-  sse = new EventSource(`/api/eventos?sid=${sessionId}`);
+  sse = new EventSource(`/api/eventos?token=${encodeURIComponent(sessionId)}`);
   sse.addEventListener('atualizacao', () => {
     carregarLivros();
     toast('Lista de livros actualizada', 'inf');
@@ -1335,7 +1369,7 @@ function emailToggleDicas() {
 // ── Exportar CSV ────────────────────────────────────────────────────────
 
 function exportarCSV(tipo) {
-  const url = `/api/admin/relatorio/${tipo}.csv?sid=${encodeURIComponent(sessionId)}`;
+  const url = `/api/admin/relatorio/${tipo}.csv?token=${encodeURIComponent(sessionId)}`;
   const a = document.createElement('a');
   a.href = url;
   a.download = `${tipo}-${new Date().toISOString().slice(0,10)}.csv`;
@@ -1578,4 +1612,15 @@ function chatAutoResize(el) {
 
 // ── Restaurar sessão (isAdmin lido do localStorage, não derivado do nome) ──
 
-if (sessionId && nomeUser) mostrarMain();
+if (sessionId && nomeUser) {
+  // Verificar se o JWT ainda é válido (pode ter expirado enquanto o browser estava fechado)
+  const claims = parseJwt(sessionId);
+  if (claims && claims.exp && claims.exp * 1000 > Date.now()) {
+    agendarRefresh();
+    mostrarMain();
+  } else {
+    // Token expirado — limpar e mostrar login
+    ['token','nome','isAdmin'].forEach(k => localStorage.removeItem(k));
+    sessionId = nomeUser = null; isAdmin = false;
+  }
+}

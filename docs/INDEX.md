@@ -111,7 +111,7 @@ gestao-recursos/
 |----------|--------------------------|
 | Arquitectura cliente-servidor | Javalin (servidor) + browser (cliente) |
 | Sockets TCP | GestorTCP porta 9090 com protocolo de texto |
-| Comunicação HTTP REST | 30+ endpoints JSON |
+| Comunicação HTTP REST | 45+ endpoints JSON |
 | Comunicação assíncrona (push) | SSE — Server-Sent Events |
 | Concorrência | `synchronized`, `ConcurrentHashMap`, thread pools |
 | Propagação de eventos | Broadcast SSE; GestorTCP `notificarTodos` |

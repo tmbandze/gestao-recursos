@@ -49,7 +49,7 @@ Conta admin por defeito: `admin@biblioteca.local` / `admin123`
 | Propagação de eventos | Broadcast SSE a todos os clientes ligados |
 | Comunicação baseada em eventos | `MonitorPrazos` agendado com `ScheduledExecutorService` |
 | Transparência de localização | Browser acede ao servidor por IP:porta |
-| Sessões sem estado | Token UUID por sessão (`X-Session-ID` header) |
+| Autenticação stateless | JWT HMAC-SHA256 (`Authorization: Bearer`); blacklist de `jti`; renovação automática (24h) |
 | Persistência distribuída | Estado em ficheiros JSON (sobrevive a reinícios) |
 
 ---
@@ -59,8 +59,8 @@ Conta admin por defeito: `admin@biblioteca.local` / `admin123`
 ```
 Browser (HTML + JS)
       │
-      │  HTTP REST  /api/...
-      │  SSE        /api/sse
+      │  HTTP REST  /api/...   (JWT: Authorization: Bearer)
+      │  SSE        /api/eventos
       ▼
 ┌─────────────────────────────────────────────┐
 │                 Servidor.java               │
@@ -90,6 +90,7 @@ Browser (HTML + JS)
 
 | Documento | Conteúdo |
 |-----------|---------|
+| [docs/INDEX.md](docs/INDEX.md) | Índice geral da documentação |
 | [docs/RELATORIO.md](docs/RELATORIO.md) | Relatório académico completo |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | Design técnico detalhado |
 | [docs/INSTALACAO.md](docs/INSTALACAO.md) | Como instalar e executar |
@@ -108,6 +109,7 @@ Browser (HTML + JS)
 | Serialização JSON | Gson | 2.10.1 |
 | Geração de capas PDF | Apache PDFBox | 3.0.3 |
 | Email SMTP | Jakarta Mail (Angus) | 2.0.3 |
+| Autenticação JWT | JJWT (io.jsonwebtoken) | 0.12.6 |
 | Build | Apache Maven | 3.8+ |
 | Cliente | HTML5 + CSS3 + JavaScript | — |
 

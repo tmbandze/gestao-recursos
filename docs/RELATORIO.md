@@ -459,7 +459,7 @@ gestao-recursos/
 O sistema implementado supera os requisitos mínimos do enunciado e demonstra, de forma explícita e verificável, os principais conceitos do programa de Sistemas Distribuídos:
 
 - **Sockets TCP**: canal GestorTCP (porta 9090) com protocolo de texto
-- **HTTP REST**: API Javalin com 30+ endpoints
+- **HTTP REST**: API Javalin com 45+ endpoints
 - **Comunicação assíncrona**: SSE push para notificações em tempo real
 - **Concorrência**: `synchronized`, `ConcurrentHashMap`, `ExecutorService`, `ScheduledExecutorService`
 - **Propagação de eventos**: broadcast SSE a todos os clientes ligados
@@ -499,6 +499,7 @@ A evolução arquitectónica do sistema — de TCP/JavaFX para HTTP/SSE/Browser 
 - `GET /api/livros/pesquisa?q=` — Pesquisa
 - `GET /api/livros/{id}` — Detalhes
 - `GET /api/livros/{id}/capa` — Capa JPEG
+- `GET /api/livros/{id}/avaliacoes` — Avaliações do livro
 
 ### Autenticados (header `Authorization: Bearer <jwt>`)
 - `POST /api/logout` — invalida o `jti` do token na blacklist
@@ -537,4 +538,4 @@ A evolução arquitectónica do sistema — de TCP/JavaFX para HTTP/SSE/Browser 
 - `POST /api/admin/email/config`
 - `POST /api/admin/email/testar`
 - `DELETE /api/livros/{id}`
-- `GET /api/admin/sistema`
+- `GET /api/admin/sistema` — Estatísticas do sistema (uptime, contadores)

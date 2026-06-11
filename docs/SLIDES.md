@@ -4,6 +4,8 @@
 > **Dica de uso:** Cada secção `---` é um slide. O título em `##` é o título do slide.
 > Copiar o conteúdo para PowerPoint ou Google Slides e adicionar o diagrama/imagem indicado.
 
+> **Nota:** Alguns slides ilustram o protocolo **TCP legado (porta 9090)**. O canal principal do sistema actual é **HTTP REST + SSE (porta 8080)** com autenticação **JWT** — ver [RELATORIO.md](RELATORIO.md) e [ARQUITETURA.md](ARQUITETURA.md).
+
 ---
 
 ## SLIDE 1 — Capa

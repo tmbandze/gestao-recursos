@@ -1,5 +1,7 @@
 # PROTOCOLO.md — Protocolo de Comunicação
 
+> **Nota:** Este documento descreve o protocolo **TCP de texto (porta 9090)**, usado pelo cliente JavaFX legado. O canal principal do sistema actual é **HTTP REST + SSE (porta 8080)** com autenticação **JWT (HMAC-SHA256)** — ver [RELATORIO.md](RELATORIO.md) e [ARQUITETURA.md](ARQUITETURA.md).
+
 ## Visão Geral
 
 A comunicação entre cliente e servidor usa texto simples sobre TCP. Cada mensagem é uma linha terminada em `\n`. Os campos são separados pelo caractere `|`.

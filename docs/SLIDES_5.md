@@ -3,6 +3,8 @@
 
 > Cada secção `---` = 1 slide. Copiar para PowerPoint / Google Slides.
 
+> **Nota:** Alguns slides ilustram o protocolo **TCP legado (porta 9090)**. O canal principal do sistema actual é **HTTP REST + SSE (porta 8080)** com autenticação **JWT** — ver [RELATORIO.md](RELATORIO.md) e [ARQUITETURA.md](ARQUITETURA.md).
+
 ---
 
 ## SLIDE 1 — Capa
